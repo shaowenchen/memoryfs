@@ -13,11 +13,11 @@ RUN apt-get update && apt-get install -y protobuf-compiler && \
 
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} make build
 
-# Runtime base image (same as ops project)
-FROM shaowenchen/runtime-ubuntu:22.04
+FROM ubuntu:22.04
 
 RUN apt-get update && \
-    apt-get install -y fuse3 ca-certificates curl && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+      fuse3 ca-certificates curl && \
     rm -rf /var/lib/apt/lists/* /var/cache/apt/* /tmp/*
 
 WORKDIR /app
