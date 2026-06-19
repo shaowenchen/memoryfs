@@ -14,15 +14,15 @@ import (
 	"github.com/hanwen/go-fuse/v2/fs"
 	"github.com/hanwen/go-fuse/v2/fuse"
 
+	"github.com/shaowenchen/memoryfs/pkg/client"
 	"github.com/shaowenchen/memoryfs/pkg/fusefs"
-	"github.com/shaowenchen/memoryfs/pkg/meta"
 	"github.com/shaowenchen/memoryfs/pkg/storage"
 )
 
 func main() {
 	mountPoint := flag.String("mount", "", "mount point (required)")
-	redisAddr := flag.String("redis", "127.0.0.1:6379", "redis address for metadata")
-	workers := flag.String("workers", "", "comma-separated worker URLs (optional if registered in redis)")
+	nodes := flag.String("nodes", "", "comma-separated node HTTP URLs (required)")
+	replicaFactor := flag.Int("replica-factor", 2, "chunk replication factor")
 	foreground := flag.Bool("f", false, "run in foreground")
 	debug := flag.Bool("debug", false, "enable fuse debug")
 	flag.Parse()
@@ -30,33 +30,33 @@ func main() {
 	if *mountPoint == "" {
 		log.Fatal("mount point is required: -mount /path/to/mount")
 	}
-
-	store, err := meta.NewStore(*redisAddr)
-	if err != nil {
-		log.Fatalf("metadata store: %v", err)
+	if *nodes == "" {
+		log.Fatal("nodes is required: -nodes http://127.0.0.1:8080")
 	}
-	defer store.Close()
 
-	var workerList []string
-	if *workers != "" {
-		for _, w := range strings.Split(*workers, ",") {
-			if w = strings.TrimSpace(w); w != "" {
-				workerList = append(workerList, w)
-			}
+	var nodeList []string
+	for _, n := range strings.Split(*nodes, ",") {
+		if n = strings.TrimSpace(n); n != "" {
+			nodeList = append(nodeList, n)
 		}
 	}
-	chunks := storage.NewChunkStore(store, workerList)
-	if err := chunks.RefreshWorkers(context.Background()); err != nil {
-		log.Printf("warning: refresh workers: %v", err)
+
+	metaStore := client.NewRemoteMeta(nodeList)
+	defer metaStore.Close()
+
+	chunks := storage.NewChunkStore(metaStore, nodeList, *replicaFactor)
+	if err := chunks.RefreshNodes(context.Background()); err != nil {
+		log.Printf("warning: refresh nodes: %v", err)
 	}
-	if len(chunks.Workers()) == 0 {
-		log.Fatal("no workers available; start a worker or pass -workers")
+	if len(chunks.Nodes()) == 0 {
+		log.Printf("using configured nodes: %v", nodeList)
+	} else {
+		log.Printf("using nodes: %v", chunks.Nodes())
 	}
-	log.Printf("using workers: %v", chunks.Workers())
 
 	uid := uint32(syscall.Getuid())
 	gid := uint32(syscall.Getgid())
-	root := fusefs.NewRoot(store, chunks, uid, gid)
+	root := fusefs.NewRoot(metaStore, chunks, uid, gid)
 
 	opts := &fs.Options{
 		MountOptions: fuse.MountOptions{

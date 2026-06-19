@@ -1,0 +1,141 @@
+syntax = "proto3";
+
+package memoryfs.v1;
+
+option go_package = "github.com/shaowenchen/memoryfs/api/memoryfs/v1;memoryfsv1";
+
+service MemoryFS {
+  rpc Health(HealthRequest) returns (HealthResponse);
+  rpc GetLeader(GetLeaderRequest) returns (GetLeaderResponse);
+  rpc ListNodes(ListNodesRequest) returns (ListNodesResponse);
+  rpc Join(JoinRequest) returns (JoinResponse);
+
+  rpc GetAttr(GetAttrRequest) returns (GetAttrResponse);
+  rpc Lookup(LookupRequest) returns (LookupResponse);
+  rpc Readdir(ReaddirRequest) returns (ReaddirResponse);
+  rpc Mkdir(MkdirRequest) returns (MkdirResponse);
+  rpc Create(CreateRequest) returns (CreateResponse);
+  rpc Symlink(SymlinkRequest) returns (SymlinkResponse);
+  rpc Unlink(UnlinkRequest) returns (UnlinkResponse);
+  rpc Rmdir(RmdirRequest) returns (RmdirResponse);
+  rpc Rename(RenameRequest) returns (RenameResponse);
+  rpc SetAttr(SetAttrRequest) returns (SetAttrResponse);
+
+  rpc PutChunk(stream PutChunkRequest) returns (PutChunkResponse);
+  rpc GetChunk(GetChunkRequest) returns (stream GetChunkResponse);
+  rpc DeleteChunk(DeleteChunkRequest) returns (DeleteChunkResponse);
+
+  rpc Drain(DrainRequest) returns (DrainResponse);
+  rpc Ready(ReadyRequest) returns (ReadyResponse);
+}
+
+message Attr {
+  uint64 ino = 1;
+  uint32 mode = 2;
+  uint64 size = 3;
+  uint32 uid = 4;
+  uint32 gid = 5;
+  int64 mtime = 6;
+  uint32 nlink = 7;
+  string target = 8;
+  repeated string chunks = 9;
+}
+
+message HealthRequest {}
+message HealthResponse {
+  string status = 1;
+  string node_state = 2;
+  uint64 cluster_epoch = 3;
+  bool is_leader = 4;
+  int32 pending_drain_chunks = 5;
+}
+
+message GetLeaderRequest {}
+message GetLeaderResponse { string leader = 1; }
+
+message ListNodesRequest {}
+message ListNodesResponse { repeated string nodes = 1; }
+
+message JoinRequest {
+  string id = 1;
+  string raft_addr = 2;
+  string http_addr = 3;
+  string grpc_addr = 4;
+  string rdma_addr = 5;
+}
+message JoinResponse {}
+
+message GetAttrRequest { uint64 ino = 1; }
+message GetAttrResponse { Attr attr = 1; }
+
+message LookupRequest { uint64 parent_ino = 1; string name = 2; }
+message LookupResponse { Attr attr = 1; }
+
+message ReaddirRequest { uint64 parent_ino = 1; }
+message ReaddirResponse { map<string, Attr> entries = 1; }
+
+message MkdirRequest {
+  uint64 parent_ino = 1;
+  string name = 2;
+  uint32 mode = 3;
+  uint32 uid = 4;
+  uint32 gid = 5;
+}
+message MkdirResponse { Attr attr = 1; }
+
+message CreateRequest {
+  uint64 parent_ino = 1;
+  string name = 2;
+  uint32 mode = 3;
+  uint32 uid = 4;
+  uint32 gid = 5;
+}
+message CreateResponse { Attr attr = 1; }
+
+message SymlinkRequest {
+  uint64 parent_ino = 1;
+  string name = 2;
+  string target = 3;
+  uint32 uid = 4;
+  uint32 gid = 5;
+}
+message SymlinkResponse { Attr attr = 1; }
+
+message UnlinkRequest { uint64 parent_ino = 1; string name = 2; }
+message UnlinkResponse { Attr attr = 1; }
+
+message RmdirRequest { uint64 parent_ino = 1; string name = 2; }
+message RmdirResponse {}
+
+message RenameRequest {
+  uint64 old_parent = 1;
+  uint64 new_parent = 2;
+  string old_name = 3;
+  string new_name = 4;
+}
+message RenameResponse {}
+
+message SetAttrRequest { Attr attr = 1; }
+message SetAttrResponse { Attr attr = 1; }
+
+message PutChunkRequest {
+  string chunk_id = 1;
+  bytes data = 2;
+  int32 replica_factor = 3;
+}
+message PutChunkResponse { repeated string replicas = 1; }
+
+message GetChunkRequest { string chunk_id = 1; }
+message GetChunkResponse { bytes data = 1; }
+
+message DeleteChunkRequest { string chunk_id = 1; }
+message DeleteChunkResponse {}
+
+message DrainRequest { bool force = 1; }
+message DrainResponse {
+  int32 remaining_chunks = 1;
+  bool drained = 2;
+}
+
+message ReadyRequest {}
+message ReadyResponse { string status = 1; }

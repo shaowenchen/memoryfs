@@ -1,0 +1,13 @@
+{{- if .Values.node.podDisruptionBudget.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "memoryfs.fullname" . }}
+  labels:
+    {{- include "memoryfs.labels" . | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.node.podDisruptionBudget.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "memoryfs.selectorLabels" . | nindent 6 }}
+{{- end }}

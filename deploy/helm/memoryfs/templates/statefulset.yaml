@@ -1,0 +1,135 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "memoryfs.fullname" . }}
+  labels:
+    {{- include "memoryfs.labels" . | nindent 4 }}
+spec:
+  serviceName: {{ include "memoryfs.headless" . }}
+  replicas: {{ .Values.replicaCount }}
+  podManagementPolicy: {{ .Values.node.podManagementPolicy }}
+  updateStrategy:
+    type: {{ .Values.node.updateStrategy }}
+  selector:
+    matchLabels:
+      {{- include "memoryfs.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "memoryfs.selectorLabels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "memoryfs.serviceAccountName" . }}
+      terminationGracePeriodSeconds: 60
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: node
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              {{ include "memoryfs.bootstrapJoinScript" . | nindent 14 }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.httpPort }}
+            - name: grpc
+              containerPort: {{ .Values.service.grpcPort }}
+            - name: raft
+              containerPort: {{ .Values.service.raftPort }}
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: MEMORYFS_DATA
+              value: {{ .Values.node.dataDir | quote }}
+            - name: MEMORYFS_CHUNK_DIR
+              value: {{ .Values.node.chunkDir | quote }}
+            - name: MEMORYFS_CHUNK_BACKEND
+              value: {{ .Values.node.chunkBackend | quote }}
+            - name: MEMORYFS_REPLICA_FACTOR
+              value: {{ .Values.replicaFactor | quote }}
+            - name: MEMORYFS_MEM_CACHE_MB
+              value: {{ .Values.node.memCacheMB | quote }}
+            - name: MEMORYFS_DISK_QUOTA_GB
+              value: {{ .Values.node.diskQuotaGB | quote }}
+            - name: MEMORYFS_GC_INTERVAL
+              value: {{ .Values.node.gcInterval | quote }}
+            - name: MEMORYFS_DEFAULT_TTL
+              value: {{ .Values.node.defaultTTL | quote }}
+            - name: MEMORYFS_MAX_FILE_AGE
+              value: {{ .Values.node.maxFileAge | quote }}
+            - name: MEMORYFS_HEADLESS_SERVICE
+              value: {{ include "memoryfs.headless" . }}
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 20
+          resources:
+            {{- toYaml .Values.node.resources | nindent 12 }}
+          {{- if or .Values.node.lifecycle.preStopDrain .Values.node.lifecycle.postStartReady }}
+          lifecycle:
+            {{- if .Values.node.lifecycle.preStopDrain }}
+            preStop:
+              exec:
+                command:
+                  - /bin/sh
+                  - -c
+                  - |
+                    curl -sf -X POST http://127.0.0.1:{{ .Values.service.httpPort }}/v1/lifecycle/drain || true
+                    sleep 10
+            {{- end }}
+            {{- if .Values.node.lifecycle.postStartReady }}
+            postStart:
+              exec:
+                command:
+                  - /bin/sh
+                  - -c
+                  - curl -sf -X POST http://127.0.0.1:{{ .Values.service.httpPort }}/v1/lifecycle/ready || true
+            {{- end }}
+          {{- end }}
+          volumeMounts:
+            - name: data
+              mountPath: {{ .Values.node.dataDir }}
+      {{- if not .Values.node.persistence.enabled }}
+      volumes:
+        - name: data
+          emptyDir: {}
+      {{- end }}
+  {{- if .Values.node.persistence.enabled }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes:
+          {{- toYaml .Values.node.persistence.accessModes | nindent 10 }}
+        {{- if .Values.node.persistence.storageClass }}
+        storageClassName: {{ .Values.node.persistence.storageClass | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.node.persistence.size }}
+  {{- end }}

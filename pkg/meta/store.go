@@ -3,61 +3,86 @@ package meta
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"path"
+	"strconv"
 	"strings"
 	"time"
 
-	"github.com/redis/go-redis/v9"
+	"github.com/shaowenchen/memoryfs/pkg/kv"
 )
 
 const (
-	rootIno = 1
-	keyPrefix = "memoryfs"
+	rootIno      = 1
+	keyPrefix    = "memoryfs"
+	inodeIndexKey = keyPrefix + ":inodeindex"
+)
+
+var (
+	ErrNotFound    = errors.New("entry not found")
+	ErrExists      = errors.New("file exists")
+	ErrNotDir      = errors.New("not a directory")
+	ErrIsDir       = errors.New("is a directory")
+	ErrNotEmpty    = errors.New("directory not empty")
+	ErrInvalidName = errors.New("invalid name")
 )
 
 // ChunkSize is the default file chunk size (4 MiB).
 const ChunkSize = 4 << 20
 
-// Attr holds inode metadata stored in Redis.
+// Attr holds inode metadata.
 type Attr struct {
 	Ino    uint64   `json:"ino"`
 	Mode   uint32   `json:"mode"`
 	Size   uint64   `json:"size"`
 	UID    uint32   `json:"uid"`
 	GID    uint32   `json:"gid"`
-	Mtime  int64    `json:"mtime"`
-	Nlink  uint32   `json:"nlink"`
+	Mtime    int64    `json:"mtime"`
+	Nlink    uint32   `json:"nlink"`
+	ExpireAt int64    `json:"expire_at,omitempty"`
+	Target   string   `json:"target,omitempty"`
 	Chunks []string `json:"chunks,omitempty"`
 }
 
-// Store manages filesystem metadata in Redis.
-type Store struct {
-	rdb *redis.Client
+// Backend is the metadata storage interface.
+type Backend interface {
+	GetAttr(ctx context.Context, ino uint64) (*Attr, error)
+	Lookup(ctx context.Context, parentIno uint64, name string) (*Attr, error)
+	Readdir(ctx context.Context, parentIno uint64) (map[string]*Attr, error)
+	Mkdir(ctx context.Context, parentIno uint64, name string, mode, uid, gid uint32) (*Attr, error)
+	Create(ctx context.Context, parentIno uint64, name string, mode, uid, gid uint32) (*Attr, error)
+	Symlink(ctx context.Context, parentIno uint64, name, target string, uid, gid uint32) (*Attr, error)
+	Unlink(ctx context.Context, parentIno uint64, name string) (*Attr, error)
+	Rmdir(ctx context.Context, parentIno uint64, name string) error
+	Rename(ctx context.Context, oldParent, newParent uint64, oldName, newName string) error
+	UpdateAttr(ctx context.Context, attr *Attr) error
+	ListNodes(ctx context.Context) ([]string, error)
+	ListInos(ctx context.Context) ([]uint64, error)
+	PurgeInode(ctx context.Context, ino uint64) error
+	Close() error
 }
 
-// NewStore creates a metadata store backed by Redis.
-func NewStore(redisAddr string) (*Store, error) {
-	rdb := redis.NewClient(&redis.Options{Addr: redisAddr})
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	if err := rdb.Ping(ctx).Err(); err != nil {
-		return nil, fmt.Errorf("redis ping: %w", err)
-	}
-	s := &Store{rdb: rdb}
-	if err := s.initRoot(ctx); err != nil {
+// LocalStore implements Backend on top of kv.KV.
+type LocalStore struct {
+	kv kv.KV
+}
+
+// NewLocalStore creates a metadata store backed by embedded KV.
+func NewLocalStore(store kv.KV) (*LocalStore, error) {
+	s := &LocalStore{kv: store}
+	if err := s.initRoot(context.Background()); err != nil {
 		return nil, err
 	}
 	return s, nil
 }
 
-func (s *Store) initRoot(ctx context.Context) error {
-	key := inoKey(rootIno)
-	exists, err := s.rdb.Exists(ctx, key).Result()
+func (s *LocalStore) initRoot(ctx context.Context) error {
+	exists, err := s.kv.Exists(inoKey(rootIno))
 	if err != nil {
 		return err
 	}
-	if exists > 0 {
+	if exists {
 		return nil
 	}
 	root := &Attr{
@@ -68,40 +93,25 @@ func (s *Store) initRoot(ctx context.Context) error {
 		Mtime: time.Now().Unix(),
 		Nlink: 2,
 	}
-	if err := s.setAttr(ctx, root); err != nil {
-		return err
-	}
-	return s.rdb.Set(ctx, nextInoKey(), rootIno, 0).Err()
-}
-
-func inoKey(ino uint64) string {
-	return fmt.Sprintf("%s:ino:%d", keyPrefix, ino)
-}
-
-func direntKey(parentIno uint64) string {
-	return fmt.Sprintf("%s:dirent:%d", keyPrefix, parentIno)
-}
-
-func nextInoKey() string {
-	return keyPrefix + ":next_ino"
-}
-
-func (s *Store) setAttr(ctx context.Context, attr *Attr) error {
-	data, err := json.Marshal(attr)
+	data, err := json.Marshal(root)
 	if err != nil {
 		return err
 	}
-	return s.rdb.Set(ctx, inoKey(attr.Ino), data, 0).Err()
+	return s.kv.Batch([]kv.Op{
+		{Type: kv.OpSet, Key: inoKey(rootIno), Value: data},
+		{Type: kv.OpSet, Key: nextInoKey(), Value: []byte(strconv.FormatUint(rootIno, 10))},
+		{Type: kv.OpSAdd, Key: inodeIndexKey, Member: strconv.FormatUint(rootIno, 10)},
+	})
 }
 
-// GetAttr returns metadata for an inode.
-func (s *Store) GetAttr(ctx context.Context, ino uint64) (*Attr, error) {
-	data, err := s.rdb.Get(ctx, inoKey(ino)).Bytes()
-	if err == redis.Nil {
-		return nil, fmt.Errorf("inode %d not found", ino)
-	}
+func inoKey(ino uint64) string       { return fmt.Sprintf("%s:ino:%d", keyPrefix, ino) }
+func direntKey(parentIno uint64) string { return fmt.Sprintf("%s:dirent:%d", keyPrefix, parentIno) }
+func nextInoKey() string             { return keyPrefix + ":next_ino" }
+
+func (s *LocalStore) GetAttr(_ context.Context, ino uint64) (*Attr, error) {
+	data, err := s.kv.Get(inoKey(ino))
 	if err != nil {
-		return nil, err
+		return nil, ErrNotFound
 	}
 	var attr Attr
 	if err := json.Unmarshal(data, &attr); err != nil {
@@ -110,31 +120,30 @@ func (s *Store) GetAttr(ctx context.Context, ino uint64) (*Attr, error) {
 	return &attr, nil
 }
 
-// Lookup finds a child inode by name under parentIno.
-func (s *Store) Lookup(ctx context.Context, parentIno uint64, name string) (*Attr, error) {
-	childIno, err := s.rdb.HGet(ctx, direntKey(parentIno), name).Uint64()
-	if err == redis.Nil {
-		return nil, fmt.Errorf("entry not found")
+func (s *LocalStore) Lookup(_ context.Context, parentIno uint64, name string) (*Attr, error) {
+	data, err := s.kv.HGet(direntKey(parentIno), name)
+	if err != nil {
+		return nil, ErrNotFound
 	}
+	ino, err := strconv.ParseUint(string(data), 10, 64)
 	if err != nil {
 		return nil, err
 	}
-	return s.GetAttr(ctx, childIno)
+	return s.GetAttr(context.Background(), ino)
 }
 
-// Readdir lists directory entries under parentIno.
-func (s *Store) Readdir(ctx context.Context, parentIno uint64) (map[string]*Attr, error) {
-	entries, err := s.rdb.HGetAll(ctx, direntKey(parentIno)).Result()
+func (s *LocalStore) Readdir(_ context.Context, parentIno uint64) (map[string]*Attr, error) {
+	entries, err := s.kv.HGetAll(direntKey(parentIno))
 	if err != nil {
 		return nil, err
 	}
 	result := make(map[string]*Attr, len(entries))
-	for name, inoStr := range entries {
-		var ino uint64
-		if _, err := fmt.Sscanf(inoStr, "%d", &ino); err != nil {
+	for name, inoBytes := range entries {
+		ino, err := strconv.ParseUint(string(inoBytes), 10, 64)
+		if err != nil {
 			return nil, err
 		}
-		attr, err := s.GetAttr(ctx, ino)
+		attr, err := s.GetAttr(context.Background(), ino)
 		if err != nil {
 			return nil, err
 		}
@@ -143,23 +152,22 @@ func (s *Store) Readdir(ctx context.Context, parentIno uint64) (map[string]*Attr
 	return result, nil
 }
 
-func (s *Store) allocIno(ctx context.Context) (uint64, error) {
-	return s.rdb.Incr(ctx, nextInoKey()).Uint64()
+func (s *LocalStore) allocIno() (uint64, error) {
+	return s.kv.Incr(nextInoKey())
 }
 
-// Mkdir creates a directory under parentIno.
-func (s *Store) Mkdir(ctx context.Context, parentIno uint64, name string, mode uint32, uid, gid uint32) (*Attr, error) {
-	if err := s.checkName(name); err != nil {
+func (s *LocalStore) Mkdir(_ context.Context, parentIno uint64, name string, mode, uid, gid uint32) (*Attr, error) {
+	if err := checkName(name); err != nil {
 		return nil, err
 	}
-	exists, err := s.rdb.HExists(ctx, direntKey(parentIno), name).Result()
+	exists, err := s.kv.HExists(direntKey(parentIno), name)
 	if err != nil {
 		return nil, err
 	}
 	if exists {
-		return nil, fmt.Errorf("file exists")
+		return nil, ErrExists
 	}
-	ino, err := s.allocIno(ctx)
+	ino, err := s.allocIno()
 	if err != nil {
 		return nil, err
 	}
@@ -172,32 +180,35 @@ func (s *Store) Mkdir(ctx context.Context, parentIno uint64, name string, mode u
 		Mtime: now,
 		Nlink: 2,
 	}
-	pipe := s.rdb.Pipeline()
-	pipe.HSet(ctx, direntKey(parentIno), name, ino)
-	data, _ := json.Marshal(attr)
-	pipe.Set(ctx, inoKey(ino), data, 0)
-	pipe.HSet(ctx, direntKey(ino), ".", ino)
-	pipe.HSet(ctx, direntKey(ino), "..", parentIno)
-	_, err = pipe.Exec(ctx)
+	data, err := json.Marshal(attr)
+	if err != nil {
+		return nil, err
+	}
+	err = s.kv.Batch([]kv.Op{
+		{Type: kv.OpHSet, Key: direntKey(parentIno), Field: name, Value: []byte(strconv.FormatUint(ino, 10))},
+		{Type: kv.OpSet, Key: inoKey(ino), Value: data},
+		{Type: kv.OpHSet, Key: direntKey(ino), Field: ".", Value: []byte(strconv.FormatUint(ino, 10))},
+		{Type: kv.OpHSet, Key: direntKey(ino), Field: "..", Value: []byte(strconv.FormatUint(parentIno, 10))},
+		{Type: kv.OpSAdd, Key: inodeIndexKey, Member: strconv.FormatUint(ino, 10)},
+	})
 	if err != nil {
 		return nil, err
 	}
 	return attr, nil
 }
 
-// Create creates a regular file under parentIno.
-func (s *Store) Create(ctx context.Context, parentIno uint64, name string, mode uint32, uid, gid uint32) (*Attr, error) {
-	if err := s.checkName(name); err != nil {
+func (s *LocalStore) Create(_ context.Context, parentIno uint64, name string, mode, uid, gid uint32) (*Attr, error) {
+	if err := checkName(name); err != nil {
 		return nil, err
 	}
-	exists, err := s.rdb.HExists(ctx, direntKey(parentIno), name).Result()
+	exists, err := s.kv.HExists(direntKey(parentIno), name)
 	if err != nil {
 		return nil, err
 	}
 	if exists {
-		return nil, fmt.Errorf("file exists")
+		return nil, ErrExists
 	}
-	ino, err := s.allocIno(ctx)
+	ino, err := s.allocIno()
 	if err != nil {
 		return nil, err
 	}
@@ -210,107 +221,195 @@ func (s *Store) Create(ctx context.Context, parentIno uint64, name string, mode 
 		Mtime: now,
 		Nlink: 1,
 	}
-	pipe := s.rdb.Pipeline()
-	pipe.HSet(ctx, direntKey(parentIno), name, ino)
-	data, _ := json.Marshal(attr)
-	pipe.Set(ctx, inoKey(ino), data, 0)
-	_, err = pipe.Exec(ctx)
+	data, err := json.Marshal(attr)
+	if err != nil {
+		return nil, err
+	}
+	err = s.kv.Batch([]kv.Op{
+		{Type: kv.OpHSet, Key: direntKey(parentIno), Field: name, Value: []byte(strconv.FormatUint(ino, 10))},
+		{Type: kv.OpSet, Key: inoKey(ino), Value: data},
+		{Type: kv.OpSAdd, Key: inodeIndexKey, Member: strconv.FormatUint(ino, 10)},
+	})
 	if err != nil {
 		return nil, err
 	}
 	return attr, nil
 }
 
-// Unlink removes a file entry from parentIno.
-func (s *Store) Unlink(ctx context.Context, parentIno uint64, name string) (*Attr, error) {
-	childIno, err := s.rdb.HGet(ctx, direntKey(parentIno), name).Uint64()
-	if err == redis.Nil {
-		return nil, fmt.Errorf("entry not found")
+func (s *LocalStore) Symlink(_ context.Context, parentIno uint64, name, target string, uid, gid uint32) (*Attr, error) {
+	if err := checkName(name); err != nil {
+		return nil, err
 	}
+	exists, err := s.kv.HExists(direntKey(parentIno), name)
 	if err != nil {
 		return nil, err
 	}
-	attr, err := s.GetAttr(ctx, childIno)
+	if exists {
+		return nil, ErrExists
+	}
+	ino, err := s.allocIno()
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now().Unix()
+	attr := &Attr{
+		Ino:    ino,
+		Mode:   0o0120777,
+		UID:    uid,
+		GID:    gid,
+		Mtime:  now,
+		Nlink:  1,
+		Target: target,
+		Size:   uint64(len(target)),
+	}
+	data, err := json.Marshal(attr)
+	if err != nil {
+		return nil, err
+	}
+	err = s.kv.Batch([]kv.Op{
+		{Type: kv.OpHSet, Key: direntKey(parentIno), Field: name, Value: []byte(strconv.FormatUint(ino, 10))},
+		{Type: kv.OpSet, Key: inoKey(ino), Value: data},
+		{Type: kv.OpSAdd, Key: inodeIndexKey, Member: strconv.FormatUint(ino, 10)},
+	})
+	if err != nil {
+		return nil, err
+	}
+	return attr, nil
+}
+
+func (s *LocalStore) Unlink(_ context.Context, parentIno uint64, name string) (*Attr, error) {
+	data, err := s.kv.HGet(direntKey(parentIno), name)
+	if err != nil {
+		return nil, ErrNotFound
+	}
+	ino, err := strconv.ParseUint(string(data), 10, 64)
+	if err != nil {
+		return nil, err
+	}
+	attr, err := s.GetAttr(context.Background(), ino)
 	if err != nil {
 		return nil, err
 	}
 	if attr.Mode&0o170000 == 0o040000 {
-		return nil, fmt.Errorf("is a directory")
+		return nil, ErrIsDir
 	}
-	pipe := s.rdb.Pipeline()
-	pipe.HDel(ctx, direntKey(parentIno), name)
-	pipe.Del(ctx, inoKey(childIno))
-	_, err = pipe.Exec(ctx)
+	err = s.kv.Batch([]kv.Op{
+		{Type: kv.OpHDel, Key: direntKey(parentIno), Field: name},
+		{Type: kv.OpDel, Key: inoKey(ino)},
+		{Type: kv.OpSRem, Key: inodeIndexKey, Member: strconv.FormatUint(ino, 10)},
+	})
 	if err != nil {
 		return nil, err
 	}
 	return attr, nil
 }
 
-// Rmdir removes an empty directory.
-func (s *Store) Rmdir(ctx context.Context, parentIno uint64, name string) error {
-	childIno, err := s.rdb.HGet(ctx, direntKey(parentIno), name).Uint64()
-	if err == redis.Nil {
-		return fmt.Errorf("entry not found")
+func (s *LocalStore) Rmdir(_ context.Context, parentIno uint64, name string) error {
+	data, err := s.kv.HGet(direntKey(parentIno), name)
+	if err != nil {
+		return ErrNotFound
 	}
+	ino, err := strconv.ParseUint(string(data), 10, 64)
 	if err != nil {
 		return err
 	}
-	attr, err := s.GetAttr(ctx, childIno)
+	attr, err := s.GetAttr(context.Background(), ino)
 	if err != nil {
 		return err
 	}
 	if attr.Mode&0o170000 != 0o040000 {
-		return fmt.Errorf("not a directory")
+		return ErrNotDir
 	}
-	count, err := s.rdb.HLen(ctx, direntKey(childIno)).Result()
+	count, err := s.kv.HLen(direntKey(ino))
 	if err != nil {
 		return err
 	}
 	if count > 2 {
-		return fmt.Errorf("directory not empty")
+		return ErrNotEmpty
 	}
-	pipe := s.rdb.Pipeline()
-	pipe.HDel(ctx, direntKey(parentIno), name)
-	pipe.Del(ctx, inoKey(childIno))
-	pipe.Del(ctx, direntKey(childIno))
-	_, err = pipe.Exec(ctx)
-	return err
+	return s.kv.Batch([]kv.Op{
+		{Type: kv.OpHDel, Key: direntKey(parentIno), Field: name},
+		{Type: kv.OpDel, Key: inoKey(ino)},
+		{Type: kv.OpDel, Key: direntKey(ino)},
+		{Type: kv.OpSRem, Key: inodeIndexKey, Member: strconv.FormatUint(ino, 10)},
+	})
 }
 
-// Rename moves/renames an entry.
-func (s *Store) Rename(ctx context.Context, oldParent, newParent uint64, oldName, newName string) error {
-	if err := s.checkName(newName); err != nil {
+func (s *LocalStore) Rename(_ context.Context, oldParent, newParent uint64, oldName, newName string) error {
+	if err := checkName(newName); err != nil {
 		return err
 	}
-	childIno, err := s.rdb.HGet(ctx, direntKey(oldParent), oldName).Uint64()
-	if err == redis.Nil {
-		return fmt.Errorf("entry not found")
-	}
+	_, err := s.kv.HGet(direntKey(oldParent), oldName)
 	if err != nil {
-		return err
+		return ErrNotFound
 	}
-	exists, err := s.rdb.HExists(ctx, direntKey(newParent), newName).Result()
+	exists, err := s.kv.HExists(direntKey(newParent), newName)
 	if err != nil {
 		return err
 	}
 	if exists {
-		return fmt.Errorf("file exists")
+		return ErrExists
 	}
-	pipe := s.rdb.Pipeline()
-	pipe.HDel(ctx, direntKey(oldParent), oldName)
-	pipe.HSet(ctx, direntKey(newParent), newName, childIno)
-	_, err = pipe.Exec(ctx)
-	return err
+	child, err := s.kv.HGet(direntKey(oldParent), oldName)
+	if err != nil {
+		return err
+	}
+	return s.kv.Batch([]kv.Op{
+		{Type: kv.OpHDel, Key: direntKey(oldParent), Field: oldName},
+		{Type: kv.OpHSet, Key: direntKey(newParent), Field: newName, Value: child},
+	})
 }
 
-// UpdateAttr saves modified inode metadata.
-func (s *Store) UpdateAttr(ctx context.Context, attr *Attr) error {
-	return s.setAttr(ctx, attr)
+func (s *LocalStore) UpdateAttr(_ context.Context, attr *Attr) error {
+	data, err := json.Marshal(attr)
+	if err != nil {
+		return err
+	}
+	return s.kv.Set(inoKey(attr.Ino), data)
 }
 
-// ResolvePath resolves an absolute path to an inode (for debugging).
-func (s *Store) ResolvePath(ctx context.Context, p string) (*Attr, error) {
+func (s *LocalStore) ListNodes(_ context.Context) ([]string, error) {
+	fields, err := s.kv.HGetAll(raftnodeNodesKey())
+	if err != nil {
+		return nil, err
+	}
+	out := make([]string, 0, len(fields))
+	for _, v := range fields {
+		out = append(out, string(v))
+	}
+	return out, nil
+}
+
+func (s *LocalStore) ListInos(_ context.Context) ([]uint64, error) {
+	members, err := s.kv.SMembers(inodeIndexKey)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]uint64, 0, len(members))
+	for _, member := range members {
+		ino, err := strconv.ParseUint(member, 10, 64)
+		if err != nil {
+			continue
+		}
+		out = append(out, ino)
+	}
+	return out, nil
+}
+
+func (s *LocalStore) PurgeInode(_ context.Context, ino uint64) error {
+	if ino == rootIno {
+		return fmt.Errorf("cannot purge root inode")
+	}
+	return s.kv.Batch([]kv.Op{
+		{Type: kv.OpDel, Key: inoKey(ino)},
+		{Type: kv.OpSRem, Key: inodeIndexKey, Member: strconv.FormatUint(ino, 10)},
+	})
+}
+
+func (s *LocalStore) Close() error { return s.kv.Close() }
+
+// ResolvePath resolves an absolute path to an inode.
+func (s *LocalStore) ResolvePath(ctx context.Context, p string) (*Attr, error) {
 	p = path.Clean("/" + strings.TrimPrefix(p, "/"))
 	if p == "/" {
 		return s.GetAttr(ctx, rootIno)
@@ -333,29 +432,37 @@ func (s *Store) ResolvePath(ctx context.Context, p string) (*Attr, error) {
 // RootIno returns the root inode number.
 func RootIno() uint64 { return rootIno }
 
-func (s *Store) checkName(name string) error {
+// ChunkID generates a chunk identifier.
+func ChunkID(ino uint64, index int) string {
+	return fmt.Sprintf("%d_%d", ino, index)
+}
+
+func checkName(name string) error {
 	if name == "" || name == "." || name == ".." {
-		return fmt.Errorf("invalid name")
+		return ErrInvalidName
 	}
 	return nil
 }
 
-// Close closes the Redis connection.
-func (s *Store) Close() error {
-	return s.rdb.Close()
-}
+func raftnodeNodesKey() string { return "memoryfs:nodes" }
 
-// RegisterWorker adds a worker URL to the cluster registry.
-func (s *Store) RegisterWorker(ctx context.Context, url string) error {
-	return s.rdb.SAdd(ctx, keyPrefix+":workers", url).Err()
-}
-
-// ListWorkers returns registered worker URLs.
-func (s *Store) ListWorkers(ctx context.Context) ([]string, error) {
-	return s.rdb.SMembers(ctx, keyPrefix+":workers").Result()
-}
-
-// ChunkID generates a chunk identifier for an inode and chunk index.
-func ChunkID(ino uint64, index int) string {
-	return fmt.Sprintf("%d_%d", ino, index)
+// MapError converts store errors to human-readable messages for HTTP API.
+func MapError(err error) string {
+	if err == nil {
+		return ""
+	}
+	switch {
+	case errors.Is(err, ErrExists):
+		return "file exists"
+	case errors.Is(err, ErrNotFound):
+		return "entry not found"
+	case errors.Is(err, ErrNotEmpty):
+		return "directory not empty"
+	case errors.Is(err, ErrIsDir):
+		return "is a directory"
+	case errors.Is(err, ErrNotDir):
+		return "not a directory"
+	default:
+		return err.Error()
+	}
 }

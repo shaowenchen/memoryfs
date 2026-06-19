@@ -1,0 +1,243 @@
+package client
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"sync"
+	"time"
+
+	"github.com/shaowenchen/memoryfs/pkg/meta"
+)
+
+// RemoteMeta implements meta.Backend over HTTP.
+type RemoteMeta struct {
+	mu       sync.RWMutex
+	nodes    []string
+	leader   string
+	client   *http.Client
+}
+
+// NewRemoteMeta creates a remote metadata client.
+func NewRemoteMeta(nodes []string) *RemoteMeta {
+	return &RemoteMeta{
+		nodes:  append([]string(nil), nodes...),
+		client: &http.Client{Timeout: 15 * time.Second},
+	}
+}
+
+type fsReq struct {
+	Ino        uint64 `json:"ino,omitempty"`
+	ParentIno  uint64 `json:"parent_ino,omitempty"`
+	Name       string `json:"name,omitempty"`
+	Mode       uint32 `json:"mode,omitempty"`
+	UID        uint32 `json:"uid,omitempty"`
+	GID        uint32 `json:"gid,omitempty"`
+	Target     string `json:"target,omitempty"`
+	OldParent  uint64 `json:"old_parent,omitempty"`
+	NewParent  uint64 `json:"new_parent,omitempty"`
+	OldName    string `json:"old_name,omitempty"`
+	NewName    string `json:"new_name,omitempty"`
+	Attr       *meta.Attr `json:"attr,omitempty"`
+}
+
+type fsResp struct {
+	Attr   *meta.Attr       `json:"attr,omitempty"`
+	Attrs  map[string]*meta.Attr `json:"attrs,omitempty"`
+	Nodes  []string         `json:"nodes,omitempty"`
+	Leader string           `json:"leader,omitempty"`
+	Error  string           `json:"error,omitempty"`
+}
+
+func (r *RemoteMeta) GetAttr(ctx context.Context, ino uint64) (*meta.Attr, error) {
+	var resp fsResp
+	if err := r.post(ctx, "/v1/fs/getattr", fsReq{Ino: ino}, &resp, false); err != nil {
+		return nil, err
+	}
+	return resp.Attr, nil
+}
+
+func (r *RemoteMeta) Lookup(ctx context.Context, parentIno uint64, name string) (*meta.Attr, error) {
+	var resp fsResp
+	if err := r.post(ctx, "/v1/fs/lookup", fsReq{ParentIno: parentIno, Name: name}, &resp, false); err != nil {
+		return nil, err
+	}
+	return resp.Attr, nil
+}
+
+func (r *RemoteMeta) Readdir(ctx context.Context, parentIno uint64) (map[string]*meta.Attr, error) {
+	var resp fsResp
+	if err := r.post(ctx, "/v1/fs/readdir", fsReq{ParentIno: parentIno}, &resp, false); err != nil {
+		return nil, err
+	}
+	return resp.Attrs, nil
+}
+
+func (r *RemoteMeta) Mkdir(ctx context.Context, parentIno uint64, name string, mode, uid, gid uint32) (*meta.Attr, error) {
+	var resp fsResp
+	if err := r.post(ctx, "/v1/fs/mkdir", fsReq{ParentIno: parentIno, Name: name, Mode: mode, UID: uid, GID: gid}, &resp, true); err != nil {
+		return nil, err
+	}
+	return resp.Attr, nil
+}
+
+func (r *RemoteMeta) Create(ctx context.Context, parentIno uint64, name string, mode, uid, gid uint32) (*meta.Attr, error) {
+	var resp fsResp
+	if err := r.post(ctx, "/v1/fs/create", fsReq{ParentIno: parentIno, Name: name, Mode: mode, UID: uid, GID: gid}, &resp, true); err != nil {
+		return nil, err
+	}
+	return resp.Attr, nil
+}
+
+func (r *RemoteMeta) Symlink(ctx context.Context, parentIno uint64, name, target string, uid, gid uint32) (*meta.Attr, error) {
+	var resp fsResp
+	if err := r.post(ctx, "/v1/fs/symlink", fsReq{ParentIno: parentIno, Name: name, Target: target, UID: uid, GID: gid}, &resp, true); err != nil {
+		return nil, err
+	}
+	return resp.Attr, nil
+}
+
+func (r *RemoteMeta) Unlink(ctx context.Context, parentIno uint64, name string) (*meta.Attr, error) {
+	var resp fsResp
+	if err := r.post(ctx, "/v1/fs/unlink", fsReq{ParentIno: parentIno, Name: name}, &resp, true); err != nil {
+		return nil, err
+	}
+	return resp.Attr, nil
+}
+
+func (r *RemoteMeta) Rmdir(ctx context.Context, parentIno uint64, name string) error {
+	var resp fsResp
+	return r.post(ctx, "/v1/fs/rmdir", fsReq{ParentIno: parentIno, Name: name}, &resp, true)
+}
+
+func (r *RemoteMeta) Rename(ctx context.Context, oldParent, newParent uint64, oldName, newName string) error {
+	var resp fsResp
+	return r.post(ctx, "/v1/fs/rename", fsReq{OldParent: oldParent, NewParent: newParent, OldName: oldName, NewName: newName}, &resp, true)
+}
+
+func (r *RemoteMeta) UpdateAttr(ctx context.Context, attr *meta.Attr) error {
+	var resp fsResp
+	return r.post(ctx, "/v1/fs/setattr", fsReq{Attr: attr}, &resp, true)
+}
+
+func (r *RemoteMeta) ListNodes(ctx context.Context) ([]string, error) {
+	var resp fsResp
+	if err := r.post(ctx, "/v1/cluster/nodes", fsReq{}, &resp, false); err != nil {
+		return nil, err
+	}
+	if len(resp.Nodes) > 0 {
+		r.mu.Lock()
+		r.nodes = resp.Nodes
+		r.mu.Unlock()
+	}
+	return resp.Nodes, nil
+}
+
+func (r *RemoteMeta) ListInos(context.Context) ([]uint64, error) {
+	return nil, fmt.Errorf("ListInos not supported on remote meta")
+}
+
+func (r *RemoteMeta) PurgeInode(context.Context, uint64) error {
+	return fmt.Errorf("PurgeInode not supported on remote meta")
+}
+
+func (r *RemoteMeta) Close() error { return nil }
+
+func (r *RemoteMeta) post(ctx context.Context, path string, req fsReq, resp *fsResp, write bool) error {
+	nodes := r.nodeList()
+	if len(nodes) == 0 {
+		return fmt.Errorf("no nodes configured")
+	}
+	var lastErr error
+	for _, base := range nodes {
+		if err := r.doPost(ctx, base+path, req, resp); err != nil {
+			lastErr = err
+			if write && resp.Leader != "" {
+				r.mu.Lock()
+				r.leader = resp.Leader
+				r.mu.Unlock()
+				return r.doPost(ctx, resp.Leader+path, req, resp)
+			}
+			continue
+		}
+		if resp.Error != "" {
+			return mapClientError(resp.Error)
+		}
+		return nil
+	}
+	return lastErr
+}
+
+func mapClientError(msg string) error {
+	switch msg {
+	case "file exists":
+		return meta.ErrExists
+	case "entry not found":
+		return meta.ErrNotFound
+	case "directory not empty":
+		return meta.ErrNotEmpty
+	case "is a directory":
+		return meta.ErrIsDir
+	case "not a directory":
+		return meta.ErrNotDir
+	default:
+		return fmt.Errorf("%s", msg)
+	}
+}
+
+func (r *RemoteMeta) doPost(ctx context.Context, url string, req fsReq, resp *fsResp) error {
+	body, err := json.Marshal(req)
+	if err != nil {
+		return err
+	}
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpResp, err := r.client.Do(httpReq)
+	if err != nil {
+		return err
+	}
+	defer httpResp.Body.Close()
+	raw, err := io.ReadAll(httpResp.Body)
+	if err != nil {
+		return err
+	}
+	if err := json.Unmarshal(raw, resp); err != nil {
+		return fmt.Errorf("%s: %s", url, string(raw))
+	}
+	if httpResp.StatusCode == http.StatusTemporaryRedirect || httpResp.StatusCode == http.StatusConflict {
+		return fmt.Errorf("redirect")
+	}
+	if httpResp.StatusCode >= 400 {
+		if resp.Error != "" {
+			return mapClientError(resp.Error)
+		}
+		return fmt.Errorf("%s: %s", url, string(raw))
+	}
+	if resp.Error != "" {
+		return mapClientError(resp.Error)
+	}
+	return nil
+}
+
+func (r *RemoteMeta) nodeList() []string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if r.leader != "" {
+		return []string{r.leader}
+	}
+	out := make([]string, len(r.nodes))
+	copy(out, r.nodes)
+	return out
+}
+
+// RefreshNodes updates node list from cluster.
+func (r *RemoteMeta) RefreshNodes(ctx context.Context) error {
+	_, err := r.ListNodes(ctx)
+	return err
+}

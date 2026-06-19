@@ -1,0 +1,30 @@
+1. Get cluster status:
+   kubectl get pods -l app.kubernetes.io/instance={{ .Release.Name }}
+
+2. Node HTTP endpoints (headless DNS):
+{{- $fullname := include "memoryfs.fullname" . -}}
+{{- $headless := include "memoryfs.headless" . -}}
+{{- $port := .Values.service.httpPort -}}
+{{- range $i, $e := until (int .Values.replicaCount) }}
+   http://{{ $fullname }}-{{ $i }}.{{ $headless }}:{{ $port }}
+{{- end }}
+
+3. Cluster service (any ready node):
+   http://{{ include "memoryfs.fullname" . }}:{{ .Values.service.httpPort }}
+
+4. Ops scripts (from repo deploy/scripts):
+   ./deploy/scripts/cluster-status.sh http://{{ include "memoryfs.fullname" . }}:{{ .Values.service.httpPort }}
+
+5. Scale up (increase replicaCount, then helm upgrade):
+   helm upgrade {{ .Release.Name }} ./deploy/helm/memoryfs --set replicaCount=5
+
+6. Scale down (drain node first):
+   ./deploy/scripts/scale-down.sh http://{{ include "memoryfs.fullname" . }}-N.{{ include "memoryfs.headless" . }}:{{ .Values.service.httpPort }}
+
+7. Backup node PVC:
+   kubectl exec {{ include "memoryfs.fullname" . }}-0 -- tar -czf - /data > backup.tar.gz
+
+{{- if .Values.mount.enabled }}
+
+8. FUSE mount available on nodes at: {{ .Values.mount.hostPath }}
+{{- end }}

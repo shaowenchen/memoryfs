@@ -1,0 +1,12 @@
+apiVersion: v2
+name: memoryfs
+description: Distributed memory-oriented filesystem cluster
+type: application
+version: 0.1.0
+appVersion: "latest"
+keywords:
+  - memoryfs
+  - fuse
+  - storage
+maintainers:
+  - name: shaowenchen

@@ -2,6 +2,7 @@ package fusefs
 
 import (
 	"context"
+	"errors"
 	"log"
 	"syscall"
 	"time"
@@ -13,34 +14,30 @@ import (
 	"github.com/shaowenchen/memoryfs/pkg/storage"
 )
 
-// MemoryFS is the root FUSE node backed by Redis metadata and worker storage.
+// MemoryFS is the root FUSE node.
 type MemoryFS struct {
 	fs.Inode
-	store  *meta.Store
+	store  meta.Backend
 	chunks *storage.ChunkStore
 	uid    uint32
 	gid    uint32
 }
 
 // NewRoot creates the root filesystem node.
-func NewRoot(store *meta.Store, chunks *storage.ChunkStore, uid, gid uint32) *MemoryFS {
-	return &MemoryFS{
-		store:  store,
-		chunks: chunks,
-		uid:    uid,
-		gid:    gid,
-	}
+func NewRoot(store meta.Backend, chunks *storage.ChunkStore, uid, gid uint32) *MemoryFS {
+	return &MemoryFS{store: store, chunks: chunks, uid: uid, gid: gid}
 }
 
 var (
-	_ fs.NodeLookuper   = (*MemoryFS)(nil)
-	_ fs.NodeGetattrer  = (*MemoryFS)(nil)
-	_ fs.NodeReaddirer  = (*MemoryFS)(nil)
-	_ fs.NodeMkdirer    = (*MemoryFS)(nil)
-	_ fs.NodeCreater    = (*MemoryFS)(nil)
-	_ fs.NodeUnlinker   = (*MemoryFS)(nil)
-	_ fs.NodeRmdirer    = (*MemoryFS)(nil)
-	_ fs.NodeRenamer    = (*MemoryFS)(nil)
+	_ fs.NodeLookuper     = (*MemoryFS)(nil)
+	_ fs.NodeGetattrer    = (*MemoryFS)(nil)
+	_ fs.NodeReaddirer    = (*MemoryFS)(nil)
+	_ fs.NodeMkdirer      = (*MemoryFS)(nil)
+	_ fs.NodeCreater      = (*MemoryFS)(nil)
+	_ fs.NodeUnlinker     = (*MemoryFS)(nil)
+	_ fs.NodeRmdirer      = (*MemoryFS)(nil)
+	_ fs.NodeRenamer      = (*MemoryFS)(nil)
+	_ fs.NodeSymlinker    = (*MemoryFS)(nil)
 )
 
 func (m *MemoryFS) rootIno() uint64 { return meta.RootIno() }
@@ -55,11 +52,7 @@ func (m *MemoryFS) Getattr(ctx context.Context, fh fs.FileHandle, out *fuse.Attr
 }
 
 func (m *MemoryFS) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (*fs.Inode, syscall.Errno) {
-	if name == "." {
-		fillEntryOut(out, m.store, ctx, m.rootIno())
-		return m.EmbeddedInode(), 0
-	}
-	if name == ".." {
+	if name == "." || name == ".." {
 		fillEntryOut(out, m.store, ctx, m.rootIno())
 		return m.EmbeddedInode(), 0
 	}
@@ -67,7 +60,7 @@ func (m *MemoryFS) Lookup(ctx context.Context, name string, out *fuse.EntryOut) 
 	if err != nil {
 		return nil, syscall.ENOENT
 	}
-	return m.newChild(ctx, name, attr, out)
+	return m.newChild(ctx, attr, out)
 }
 
 func (m *MemoryFS) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
@@ -87,24 +80,26 @@ func (m *MemoryFS) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
 func (m *MemoryFS) Mkdir(ctx context.Context, name string, mode uint32, out *fuse.EntryOut) (*fs.Inode, syscall.Errno) {
 	attr, err := m.store.Mkdir(ctx, m.rootIno(), name, mode, m.uid, m.gid)
 	if err != nil {
-		if err.Error() == "file exists" {
-			return nil, syscall.EEXIST
-		}
-		return nil, syscall.EIO
+		return nil, mapMetaErr(err)
 	}
-	return m.newChild(ctx, name, attr, out)
+	return m.newChild(ctx, attr, out)
 }
 
 func (m *MemoryFS) Create(ctx context.Context, name string, flags uint32, mode uint32, out *fuse.EntryOut) (node *fs.Inode, fh fs.FileHandle, fuseFlags uint32, errno syscall.Errno) {
 	attr, err := m.store.Create(ctx, m.rootIno(), name, mode, m.uid, m.gid)
 	if err != nil {
-		if err.Error() == "file exists" {
-			return nil, nil, 0, syscall.EEXIST
-		}
-		return nil, nil, 0, syscall.EIO
+		return nil, nil, 0, mapMetaErr(err)
 	}
-	inode, errno := m.newChild(ctx, name, attr, out)
+	inode, errno := m.newChild(ctx, attr, out)
 	return inode, nil, fuse.FOPEN_KEEP_CACHE, errno
+}
+
+func (m *MemoryFS) Symlink(ctx context.Context, target, name string, out *fuse.EntryOut) (*fs.Inode, syscall.Errno) {
+	attr, err := m.store.Symlink(ctx, m.rootIno(), name, target, m.uid, m.gid)
+	if err != nil {
+		return nil, mapMetaErr(err)
+	}
+	return m.newChild(ctx, attr, out)
 }
 
 func (m *MemoryFS) Unlink(ctx context.Context, name string) syscall.Errno {
@@ -118,10 +113,7 @@ func (m *MemoryFS) Unlink(ctx context.Context, name string) syscall.Errno {
 
 func (m *MemoryFS) Rmdir(ctx context.Context, name string) syscall.Errno {
 	if err := m.store.Rmdir(ctx, m.rootIno(), name); err != nil {
-		if err.Error() == "directory not empty" {
-			return syscall.ENOTEMPTY
-		}
-		return syscall.ENOENT
+		return mapMetaErr(err)
 	}
 	return 0
 }
@@ -131,41 +123,26 @@ func (m *MemoryFS) Rename(ctx context.Context, name string, newParent fs.InodeEm
 	if !ok {
 		if dir, ok := newParent.(*Dir); ok {
 			if err := m.store.Rename(ctx, m.rootIno(), dir.ino, name, newName); err != nil {
-				if err.Error() == "file exists" {
-					return syscall.EEXIST
-				}
-				return syscall.EIO
+				return mapMetaErr(err)
 			}
 			return 0
 		}
 		return syscall.EXDEV
 	}
 	if err := m.store.Rename(ctx, m.rootIno(), np.rootIno(), name, newName); err != nil {
-		if err.Error() == "file exists" {
-			return syscall.EEXIST
-		}
-		return syscall.EIO
+		return mapMetaErr(err)
 	}
 	return 0
 }
 
-func (m *MemoryFS) newChild(ctx context.Context, name string, attr *meta.Attr, out *fuse.EntryOut) (*fs.Inode, syscall.Errno) {
-	stable := fs.StableAttr{Ino: attr.Ino, Mode: attr.Mode & 0o7777}
-	var child fs.InodeEmbedder
-	if attr.Mode&0o170000 == 0o040000 {
-		child = &Dir{store: m.store, chunks: m.chunks, ino: attr.Ino, uid: m.uid, gid: m.gid}
-	} else {
-		child = &File{store: m.store, chunks: m.chunks, ino: attr.Ino}
-	}
-	inode := m.NewInode(ctx, child, stable)
-	fillEntryOut(out, m.store, ctx, attr.Ino)
-	return inode, 0
+func (m *MemoryFS) newChild(ctx context.Context, attr *meta.Attr, out *fuse.EntryOut) (*fs.Inode, syscall.Errno) {
+	return newChildNode(m.NewInode, ctx, m.store, m.chunks, m.uid, m.gid, attr, out)
 }
 
 // Dir represents a subdirectory.
 type Dir struct {
 	fs.Inode
-	store  *meta.Store
+	store  meta.Backend
 	chunks *storage.ChunkStore
 	ino    uint64
 	uid    uint32
@@ -181,6 +158,7 @@ var (
 	_ fs.NodeUnlinker  = (*Dir)(nil)
 	_ fs.NodeRmdirer   = (*Dir)(nil)
 	_ fs.NodeRenamer   = (*Dir)(nil)
+	_ fs.NodeSymlinker = (*Dir)(nil)
 )
 
 func (d *Dir) Getattr(ctx context.Context, fh fs.FileHandle, out *fuse.AttrOut) syscall.Errno {
@@ -198,11 +176,10 @@ func (d *Dir) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (*fs.
 		return d.EmbeddedInode(), 0
 	}
 	if name == ".." {
-		parentIno, _ := d.store.Lookup(ctx, d.ino, "..")
-		if parentIno != nil {
-			fillEntryOut(out, d.store, ctx, parentIno.Ino)
-			return d.NewInode(ctx, &Dir{store: d.store, chunks: d.chunks, ino: parentIno.Ino, uid: d.uid, gid: d.gid},
-				fs.StableAttr{Ino: parentIno.Ino, Mode: fuse.S_IFDIR}), 0
+		if parent, err := d.store.Lookup(ctx, d.ino, ".."); err == nil {
+			fillEntryOut(out, d.store, ctx, parent.Ino)
+			return d.NewInode(ctx, &Dir{store: d.store, chunks: d.chunks, ino: parent.Ino, uid: d.uid, gid: d.gid},
+				fs.StableAttr{Ino: parent.Ino, Mode: fuse.S_IFDIR}), 0
 		}
 	}
 	attr, err := d.store.Lookup(ctx, d.ino, name)
@@ -236,10 +213,7 @@ func (d *Dir) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
 func (d *Dir) Mkdir(ctx context.Context, name string, mode uint32, out *fuse.EntryOut) (*fs.Inode, syscall.Errno) {
 	attr, err := d.store.Mkdir(ctx, d.ino, name, mode, d.uid, d.gid)
 	if err != nil {
-		if err.Error() == "file exists" {
-			return nil, syscall.EEXIST
-		}
-		return nil, syscall.EIO
+		return nil, mapMetaErr(err)
 	}
 	return d.newChild(ctx, attr, out)
 }
@@ -247,13 +221,18 @@ func (d *Dir) Mkdir(ctx context.Context, name string, mode uint32, out *fuse.Ent
 func (d *Dir) Create(ctx context.Context, name string, flags uint32, mode uint32, out *fuse.EntryOut) (node *fs.Inode, fh fs.FileHandle, fuseFlags uint32, errno syscall.Errno) {
 	attr, err := d.store.Create(ctx, d.ino, name, mode, d.uid, d.gid)
 	if err != nil {
-		if err.Error() == "file exists" {
-			return nil, nil, 0, syscall.EEXIST
-		}
-		return nil, nil, 0, syscall.EIO
+		return nil, nil, 0, mapMetaErr(err)
 	}
 	inode, errno := d.newChild(ctx, attr, out)
 	return inode, nil, fuse.FOPEN_KEEP_CACHE, errno
+}
+
+func (d *Dir) Symlink(ctx context.Context, target, name string, out *fuse.EntryOut) (*fs.Inode, syscall.Errno) {
+	attr, err := d.store.Symlink(ctx, d.ino, name, target, d.uid, d.gid)
+	if err != nil {
+		return nil, mapMetaErr(err)
+	}
+	return d.newChild(ctx, attr, out)
 }
 
 func (d *Dir) Unlink(ctx context.Context, name string) syscall.Errno {
@@ -267,10 +246,7 @@ func (d *Dir) Unlink(ctx context.Context, name string) syscall.Errno {
 
 func (d *Dir) Rmdir(ctx context.Context, name string) syscall.Errno {
 	if err := d.store.Rmdir(ctx, d.ino, name); err != nil {
-		if err.Error() == "directory not empty" {
-			return syscall.ENOTEMPTY
-		}
-		return syscall.ENOENT
+		return mapMetaErr(err)
 	}
 	return 0
 }
@@ -286,31 +262,19 @@ func (d *Dir) Rename(ctx context.Context, name string, newParent fs.InodeEmbedde
 		return syscall.EXDEV
 	}
 	if err := d.store.Rename(ctx, d.ino, newParentIno, name, newName); err != nil {
-		if err.Error() == "file exists" {
-			return syscall.EEXIST
-		}
-		return syscall.EIO
+		return mapMetaErr(err)
 	}
 	return 0
 }
 
 func (d *Dir) newChild(ctx context.Context, attr *meta.Attr, out *fuse.EntryOut) (*fs.Inode, syscall.Errno) {
-	stable := fs.StableAttr{Ino: attr.Ino, Mode: attr.Mode & 0o7777}
-	var child fs.InodeEmbedder
-	if attr.Mode&0o170000 == 0o040000 {
-		child = &Dir{store: d.store, chunks: d.chunks, ino: attr.Ino, uid: d.uid, gid: d.gid}
-	} else {
-		child = &File{store: d.store, chunks: d.chunks, ino: attr.Ino}
-	}
-	inode := d.NewInode(ctx, child, stable)
-	fillEntryOut(out, d.store, ctx, attr.Ino)
-	return inode, 0
+	return newChildNode(d.NewInode, ctx, d.store, d.chunks, d.uid, d.gid, attr, out)
 }
 
 // File represents a regular file.
 type File struct {
 	fs.Inode
-	store  *meta.Store
+	store  meta.Backend
 	chunks *storage.ChunkStore
 	ino    uint64
 }
@@ -381,6 +345,65 @@ func (f *File) Setattr(ctx context.Context, fh fs.FileHandle, in *fuse.SetAttrIn
 	return 0
 }
 
+// SymlinkNode represents a symbolic link.
+type SymlinkNode struct {
+	fs.Inode
+	store  meta.Backend
+	ino    uint64
+	target string
+}
+
+var (
+	_ fs.NodeGetattrer    = (*SymlinkNode)(nil)
+	_ fs.NodeReadlinker   = (*SymlinkNode)(nil)
+)
+
+func (s *SymlinkNode) Getattr(ctx context.Context, fh fs.FileHandle, out *fuse.AttrOut) syscall.Errno {
+	attr, err := s.store.GetAttr(ctx, s.ino)
+	if err != nil {
+		return syscall.ENOENT
+	}
+	fillAttr(out, attr)
+	return 0
+}
+
+func (s *SymlinkNode) Readlink(ctx context.Context) ([]byte, syscall.Errno) {
+	attr, err := s.store.GetAttr(ctx, s.ino)
+	if err != nil {
+		return nil, syscall.ENOENT
+	}
+	return []byte(attr.Target), 0
+}
+
+func newChildNode(newInode func(context.Context, fs.InodeEmbedder, fs.StableAttr) *fs.Inode, ctx context.Context, store meta.Backend, chunks *storage.ChunkStore, uid, gid uint32, attr *meta.Attr, out *fuse.EntryOut) (*fs.Inode, syscall.Errno) {
+	stable := fs.StableAttr{Ino: attr.Ino, Mode: attr.Mode & 0o7777}
+	var child fs.InodeEmbedder
+	switch attr.Mode & 0o170000 {
+	case 0o040000:
+		child = &Dir{store: store, chunks: chunks, ino: attr.Ino, uid: uid, gid: gid}
+	case 0o0120000:
+		child = &SymlinkNode{store: store, ino: attr.Ino, target: attr.Target}
+	default:
+		child = &File{store: store, chunks: chunks, ino: attr.Ino}
+	}
+	inode := newInode(ctx, child, stable)
+	fillEntryOut(out, store, ctx, attr.Ino)
+	return inode, 0
+}
+
+func mapMetaErr(err error) syscall.Errno {
+	switch {
+	case errors.Is(err, meta.ErrExists):
+		return syscall.EEXIST
+	case errors.Is(err, meta.ErrNotFound):
+		return syscall.ENOENT
+	case errors.Is(err, meta.ErrNotEmpty):
+		return syscall.ENOTEMPTY
+	default:
+		return syscall.EIO
+	}
+}
+
 func fillAttr(out *fuse.AttrOut, attr *meta.Attr) {
 	out.Ino = attr.Ino
 	out.Mode = attr.Mode
@@ -407,7 +430,7 @@ func fillEntryAttr(out *fuse.Attr, attr *meta.Attr) {
 	out.Blocks = (attr.Size + 511) / 512
 }
 
-func fillEntryOut(out *fuse.EntryOut, store *meta.Store, ctx context.Context, ino uint64) {
+func fillEntryOut(out *fuse.EntryOut, store meta.Backend, ctx context.Context, ino uint64) {
 	attr, err := store.GetAttr(ctx, ino)
 	if err != nil {
 		return

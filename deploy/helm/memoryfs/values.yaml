@@ -1,0 +1,72 @@
+# Default values for MemoryFS Helm chart.
+# Recommended production: 3+ nodes, RF=2, tiered backend, PVC enabled.
+
+replicaCount: 3
+
+image:
+  repository: shaowenchen/memoryfs
+  tag: latest
+  pullPolicy: IfNotPresent
+
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  name: ""
+
+# Chunk replication across nodes.
+replicaFactor: 2
+
+node:
+  chunkBackend: tiered
+  memCacheMB: 512
+  diskQuotaGB: 100
+  gcInterval: 5m
+  defaultTTL: "0"
+  maxFileAge: "0"
+  dataDir: /data
+  chunkDir: /data/chunks
+
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: "2"
+      memory: 4Gi
+
+  persistence:
+    enabled: true
+    storageClass: ""
+    size: 100Gi
+    accessModes:
+      - ReadWriteOnce
+
+  podManagementPolicy: Parallel
+  updateStrategy: RollingUpdate
+
+  # Lifecycle hooks for safe rolling updates.
+  lifecycle:
+    preStopDrain: true
+    postStartReady: true
+
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 2
+
+mount:
+  enabled: false
+  mountPath: /mnt/memoryfs
+  hostPath: /var/lib/memoryfs
+  replicaFactor: 2
+
+service:
+  type: ClusterIP
+  httpPort: 8080
+  grpcPort: 9090
+  raftPort: 8081
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

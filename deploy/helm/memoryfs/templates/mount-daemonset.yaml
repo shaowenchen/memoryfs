@@ -1,0 +1,54 @@
+{{- if .Values.mount.enabled }}
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: {{ include "memoryfs.fullname" . }}-mount
+  labels:
+    {{- include "memoryfs.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "memoryfs.name" . }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      component: mount
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ include "memoryfs.name" . }}
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        component: mount
+    spec:
+      hostNetwork: false
+      containers:
+        - name: mount
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            privileged: true
+            capabilities:
+              add: ["SYS_ADMIN"]
+          command:
+            - mount
+            - -mount
+            - {{ .Values.mount.mountPath | quote }}
+            - -nodes
+            - {{ include "memoryfs.nodeURLs" . | quote }}
+            - -replica-factor
+            - {{ .Values.mount.replicaFactor | quote }}
+            - -f
+          volumeMounts:
+            - name: fuse
+              mountPath: /dev/fuse
+            - name: mnt
+              mountPath: {{ .Values.mount.mountPath }}
+              mountPropagation: Bidirectional
+      volumes:
+        - name: fuse
+          hostPath:
+            path: /dev/fuse
+            type: CharDevice
+        - name: mnt
+          hostPath:
+            path: {{ .Values.mount.hostPath }}
+            type: DirectoryOrCreate
+{{- end }}

@@ -4,111 +4,226 @@
 
 ## 架构
 
+每个 **Node** 同时提供三种访问接口：
+
+| 接口 | 端口 | 用途 |
+|------|------|------|
+| **HTTP REST** | 8080 | 通用 API、调试、FUSE 客户端 |
+| **gRPC** | 9090 | 高性能元数据 + Chunk 流式传输 |
+| **RDMA** | 9092 | 大块零拷贝传输（`-tags rdma` 启用） |
+
 ```
-┌─────────────┐     POSIX      ┌──────────────┐
-│  FUSE 客户端 │ ◄────────────► │  本地挂载点   │
-│  (cmd/mount) │                └──────────────┘
-└──────┬──────┘
-       │ 元数据
-       ▼
-┌─────────────┐     数据块      ┌──────────────┐
-│    Redis    │                │ Worker 集群   │
-│  (元数据存储) │                │ (cmd/worker)  │
-└─────────────┘                └──────────────┘
-                                     ▲
-                               内存 chunk 存储
+FUSE/mount ──HTTP/gRPC──► Node 集群
+                            ├── KV + Raft (元数据，强一致)
+                            ├── Chunk × RF (多副本，disk/tiered/memory)
+                            └── Lifecycle + GC/TTL (drain/ready，滚动更新)
 ```
 
-- **元数据层**：Redis 存储 inode、目录项、chunk 索引（参考 JuiceFS 使用 Redis 作为元数据引擎的思路）
-- **数据层**：Worker 进程在内存中存储 4 MiB 大小的 chunk，支持横向扩展
-- **客户端**：通过 FUSE（[go-fuse](https://github.com/hanwen/go-fuse)）提供 POSIX 文件系统接口
+详细场景见 [docs/USECASES.md](docs/USECASES.md)。
+
+## 部署
+
+生产部署、扩缩容、备份恢复见 **[deploy/README.md](deploy/README.md)**。
+
+快速启动 3 节点集群：
+
+```bash
+make deploy-up
+make deploy-status
+```
+
+Kubernetes Helm：
+
+```bash
+helm upgrade --install memoryfs ./deploy/helm/memoryfs -n memoryfs --create-namespace
+```
+
+## 三种协议
+
+### HTTP API
+```bash
+curl http://127.0.0.1:8080/health
+curl -X POST http://127.0.0.1:8080/v1/fs/lookup \
+  -d '{"parent_ino":1,"name":"test.txt"}'
+curl -X PUT http://127.0.0.1:8080/chunks/2_0 --data-binary @file.bin
+```
+
+### gRPC
+```bash
+grpcurl -plaintext 127.0.0.1:9090 memoryfs.v1.MemoryFS/Health
+grpcurl -plaintext -d '{"parent_ino":1,"name":"test.txt"}' \
+  127.0.0.1:9090 memoryfs.v1.MemoryFS/Lookup
+```
+
+### RDMA
+默认构建下 RDMA 自动降级到 gRPC。Linux 上启用硬件 RDMA：
+```bash
+go build -tags rdma -o bin/node ./cmd/node
+```
+
+传输优先级：**RDMA → gRPC → HTTP**（自动 fallback）。
 
 ## 前置依赖
 
-- Go 1.21+
-- Redis
-- macOS / Linux 上的 FUSE（macOS 需安装 [macFUSE](https://osxfuse.github.io/)）
+- **Linux**（仅支持 Linux 部署）
+- FUSE3（`apt install fuse3`）
+- Go 1.26+（本地开发）
 
-## 快速开始
+## Docker 镜像（推荐）
 
-### 1. 启动 Redis
-
-```bash
-docker run -d --name memoryfs-redis -p 6379:6379 redis:7
-```
-
-### 2. 启动 Worker（可启动多个实现横向扩展）
+单一镜像 `shaowenchen/memoryfs`，通过启动参数选择服务：
 
 ```bash
-go run ./cmd/worker -addr :8080 -redis 127.0.0.1:6379
-# 第二个 worker
-go run ./cmd/worker -addr :8081 -redis 127.0.0.1:6379
-```
+# 构建
+make docker-build
 
-### 3. 挂载文件系统
+# Node 单节点
+docker run -d --name memoryfs-node \
+  -p 8080:8080 -p 9090:9090 \
+  -v memoryfs-data:/data \
+  shaowenchen/memoryfs:latest \
+  node -standalone -id n1 -http :8080 -grpc :9090 -data /data
+
+# Node 集群 bootstrap
+docker run -d --name memoryfs-n1 \
+  -p 8080:8080 -p 9090:9090 \
+  -v n1-data:/data \
+  shaowenchen/memoryfs:latest \
+  node -bootstrap -id n1 -http :8080 -grpc :9090 -raft :8081 -data /data/n1
+
+# FUSE 挂载（需 privileged + /dev/fuse）
+docker run -it --rm --privileged \
+  --device /dev/fuse --cap-add SYS_ADMIN \
+  -v /tmp/memoryfs:/mnt/memoryfs \
+  shaowenchen/memoryfs:latest \
+  mount -mount /mnt/memoryfs -nodes http://node:8080 -f
+```
 
 ```bash
-mkdir -p /tmp/memoryfs
-go run ./cmd/mount -mount /tmp/memoryfs -redis 127.0.0.1:6379 -f
+docker compose up node1 node2    # 启动集群
+docker compose up mount          # FUSE 挂载（Linux privileged）
 ```
 
-### 4. 使用
+## 快速开始（本地）
 
+### 单节点
 ```bash
-echo "hello memoryfs" > /tmp/memoryfs/test.txt
-cat /tmp/memoryfs/test.txt
-ls -la /tmp/memoryfs
-mkdir /tmp/memoryfs/subdir
+go run ./cmd/node -standalone -id n1 -http :8080 -grpc :9090 -data ./data
+go run ./cmd/mount -mount /tmp/memoryfs -nodes http://127.0.0.1:8080 -f
 ```
 
-### 5. 卸载
-
+### 三节点集群
 ```bash
-umount /tmp/memoryfs   # Linux
-umount /tmp/memoryfs   # macOS
-# 或 Ctrl+C 停止 mount 进程（使用 -f 前台模式时）
+go run ./cmd/node -bootstrap -id n1 -http :8080 -grpc :9090 -raft :8081 -data ./data
+go run ./cmd/node -id n2 -http :8090 -grpc :9190 -raft :8091 -data ./data -join http://127.0.0.1:8080
+go run ./cmd/mount -mount /tmp/memoryfs -nodes http://127.0.0.1:8080,http://127.0.0.1:8090 -f
 ```
+
+## 滚动更新与数据完整性
+
+### 问题
+每个节点 chunk 默认落盘；纯 `memory` 后端时直接重启会丢未副本化的数据。
+
+### 解决方案
+
+#### 1. 元数据：Raft 保证
+- 元数据通过 Raft 复制到多数节点
+- 滚动更新顺序：**Follower 先更新 → Leader 最后更新**
+- 任意时刻集群维持 quorum，元数据不丢
+
+#### 2. 数据：多副本 (RF 可配置) + 本地磁盘
+
+- 每个 chunk 默认 **RF=2** 写到不同节点（可通过 `-replica-factor` 调整）
+- 每个节点将 chunk **落盘到本地磁盘**（`-chunk-dir`，默认 `{data}/{id}/chunks`）
+- 副本位置记录在 KV：`memoryfs:chunkloc:{id}`
+- 节点重启后从磁盘恢复；磁盘为空时从 peer **自动 rebuild**
+
+```
+写 chunk "2_0" (RF=3)
+  ├─► Node1: /data/chunks/2/2_0  (disk)
+  ├─► Node2: /data/chunks/2/2_0  (disk)
+  └─► Node3: /data/chunks/2/2_0  (disk)
+```
+
+滚动更新时：
+1. `drain` 确保本地 chunk 已在 RF 个节点上落盘
+2. 新 Pod 启动 → `ready` → 从 peer 拉取缺失 chunk 到本地磁盘
+3. 有 PVC 时磁盘数据直接保留，rebuild 更快
+
+#### 3. 节点生命周期
+
+```
+active ──► draining ──► drained ──► (停止/更新) ──► ready ──► active
+```
+
+| 阶段 | 行为 |
+|------|------|
+| **active** | 正常读写 |
+| **draining** | 拒绝新 chunk 写入；迁移本地 chunk 到副本节点 |
+| **drained** | 所有 chunk 已有足够副本，可安全停止 |
+| **ready** | 新启动节点标记就绪，接受流量 |
+
+#### 4. K8s 滚动更新流程
+
+```yaml
+lifecycle:
+  preStop:
+    exec:
+      command:
+        - /bin/sh
+        - -c
+        - |
+          curl -X POST http://localhost:8080/v1/lifecycle/drain
+          until curl -s http://localhost:8080/health | grep drained; do sleep 2; done
+  postStart:
+    exec:
+      command: ["curl", "-X", "POST", "http://localhost:8080/v1/lifecycle/ready"]
+```
+
+进程收到 SIGTERM 时也会自动执行 drain。
+
+#### 5. 集群 Epoch
+- 每次节点加入/退出，epoch +1
+- 客户端可通过 `/health` 或 gRPC `Health` 检查 epoch 变化
+- 防止滚动更新期间读到不一致视图
 
 ## 命令行参数
 
-### worker
+### node
 
-| 参数 | 默认值 | 说明 |
-|------|--------|------|
-| `-addr` | `:8080` | HTTP 监听地址 |
-| `-redis` | `127.0.0.1:6379` | Redis 地址，用于注册 worker |
+| 参数 | 默认 | 说明 |
+|------|------|------|
+| `-id` | n1 | 节点 ID |
+| `-http` | :8080 | HTTP 地址 |
+| `-grpc` | :9090 | gRPC 地址 |
+| `-rdma` | :9092 | RDMA 地址 |
+| `-raft` | :8081 | Raft 地址 |
+| `-replica-factor` | 2 | Chunk 跨节点副本数 |
+| `-chunk-dir` | `{data}/{id}/chunks` | 本地 chunk 落盘目录 |
+| `-chunk-backend` | disk | chunk 存储：`disk`、`tiered` 或 `memory` |
+| `-mem-cache-mb` | 0 | 内存读缓存 MB（`tiered` 默认 512） |
+| `-disk-quota-gb` | 0 | 本地磁盘配额 GB（0=不限） |
+| `-gc-interval` | 5m | 孤儿 chunk GC 间隔（0=关闭） |
+| `-default-ttl` | 0 | 新建文件 TTL（0=关闭） |
+| `-max-file-age` | 0 | 按 mtime 过期清理（0=关闭） |
+| `-bootstrap` | | 初始化集群 |
+| `-standalone` | | 单节点模式 |
+| `-join` | | 加入集群 |
 
-### mount
-
-| 参数 | 默认值 | 说明 |
-|------|--------|------|
-| `-mount` | (必填) | 挂载点路径 |
-| `-redis` | `127.0.0.1:6379` | Redis 元数据地址 |
-| `-workers` | | 手动指定 worker URL 列表（逗号分隔），不填则从 Redis 发现 |
-| `-f` | false | 前台运行 |
-| `-debug` | false | 开启 FUSE 调试日志 |
-
-## 支持的 POSIX 操作
-
-- 目录：`mkdir`、`rmdir`、`readdir`、`lookup`
-- 文件：`create`、`read`、`write`、`unlink`、`truncate`
-- 其他：`rename`、`chmod`（setattr）
-
-## 构建
+## 构建与 CI
 
 ```bash
-go build -o bin/worker ./cmd/worker
-go build -o bin/mount ./cmd/mount
+make proto          # 生成 gRPC 代码
+make build          # bin/node bin/mount
+make test
+make docker-build   # 本地构建镜像
 ```
 
-## 设计说明
-
-本实现是文章构想的一个可运行原型：
-
-1. **内存作为存储介质**：Worker 将 chunk 保存在进程内存中
-2. **分布式与横向扩展**：多个 Worker 通过 Redis 注册，chunk 按 hash 路由到不同节点
-3. **元数据与数据分离**：Redis 存元数据，Worker 存数据块
-4. **POSIX via FUSE**：本地挂载后可像普通目录一样使用
+GitHub Actions 参考 [ops](https://github.com/shaowenchen/ops) 项目：
+- push 到 `main`/`master` → 测试 + 多架构镜像构建（`linux/amd64,linux/arm64`）
+- 推送 DockerHub：`shaowenchen/memoryfs:latest`
+- 同步阿里云 ACR：`registry.cn-beijing.aliyuncs.com/opshub/shaowenchen-memoryfs:latest`
+- Secrets：`DOCKERHUB_USERNAME`、`DOCKERHUB_TOKEN`、`ACR_USERNAME`、`ACR_PASSWORD`
 
 ## License
 

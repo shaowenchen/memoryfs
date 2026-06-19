@@ -1,12 +1,30 @@
-FROM golang:1.23-alpine AS builder
-WORKDIR /src
-COPY go.mod go.sum ./
-RUN go mod download
-COPY . .
-RUN CGO_ENABLED=0 go build -o /app/worker ./cmd/worker && \
-    CGO_ENABLED=0 go build -o /app/mount ./cmd/mount
+# Build the memoryfs binaries (Linux only)
+FROM golang:1.26-bookworm AS builder
+ARG TARGETOS=linux
+ARG TARGETARCH
 
-FROM alpine:3.20
-RUN apk add --no-cache ca-certificates fuse
-COPY --from=builder /app/worker /app/mount /app/
+WORKDIR /workspace
+COPY . .
+
+RUN apt-get update && apt-get install -y protobuf-compiler && \
+    go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.11 && \
+    go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.5.1 && \
+    make proto
+
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} make build
+
+# Runtime base image (same as ops project)
+FROM shaowenchen/runtime-ubuntu:22.04
+
+RUN apt-get update && \
+    apt-get install -y fuse3 ca-certificates curl && \
+    rm -rf /var/lib/apt/lists/* /var/cache/apt/* /tmp/*
+
 WORKDIR /app
+COPY --from=builder /workspace/bin/node /workspace/bin/mount /app/
+COPY scripts/entrypoint.sh /app/entrypoint.sh
+COPY deploy/scripts/node-start.sh /app/scripts/node-start.sh
+RUN chmod +x /app/entrypoint.sh /app/node /app/mount /app/scripts/node-start.sh
+
+ENTRYPOINT ["/app/entrypoint.sh"]
+CMD ["node", "-standalone", "-id", "n1", "-http", ":8080", "-data", "/data"]
