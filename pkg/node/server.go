@@ -8,25 +8,35 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+
 	"github.com/shaowenchen/memoryfs/pkg/meta"
 	"github.com/shaowenchen/memoryfs/pkg/service"
 )
 
 // Server is the unified MemoryFS node HTTP server.
 type Server struct {
-	svc *service.Service
-	mux *http.ServeMux
+	svc      *service.Service
+	mux      *http.ServeMux
+	apiToken string
 }
 
 // NewServer creates a node HTTP server.
-func NewServer(svc *service.Service) *Server {
-	s := &Server{svc: svc, mux: http.NewServeMux()}
+func NewServer(svc *service.Service, apiToken string) *Server {
+	s := &Server{svc: svc, mux: http.NewServeMux(), apiToken: apiToken}
 	s.routes()
 	return s
 }
 
 func (s *Server) routes() {
+	s.mux.HandleFunc("/", s.handleDashboard)
+	s.mux.HandleFunc("/dashboard", s.handleDashboard)
+	s.mux.HandleFunc("/dashboard/", s.handleDashboard)
+	s.mux.HandleFunc("/metrics", s.handleMetrics)
 	s.mux.HandleFunc("/health", s.handleHealth)
+	s.mux.HandleFunc("/v1/cluster/overview", s.handleOverview)
+	s.mux.HandleFunc("/v1/repair", s.handleRepairStatus)
+	s.mux.HandleFunc("/v1/repair/run", s.handleRepair)
 	s.mux.HandleFunc("/v1/cluster/leader", s.handleLeader)
 	s.mux.HandleFunc("/v1/cluster/nodes", s.handleNodes)
 	s.mux.HandleFunc("/v1/cluster/join", s.handleJoin)
@@ -36,6 +46,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/v1/lifecycle/ready", s.handleReady)
 	s.mux.HandleFunc("/v1/stats", s.handleStats)
 	s.mux.HandleFunc("/v1/gc", s.handleGC)
+	s.mux.HandleFunc("/v1/chunks/registry/set", s.handleWrite(s.registrySet))
+	s.mux.HandleFunc("/v1/chunks/registry/delete", s.handleWrite(s.registryDelete))
 	s.mux.HandleFunc("/v1/fs/getattr", s.handleFS(s.getattr))
 	s.mux.HandleFunc("/v1/fs/lookup", s.handleFS(s.lookup))
 	s.mux.HandleFunc("/v1/fs/readdir", s.handleFS(s.readdir))
@@ -50,7 +62,9 @@ func (s *Server) routes() {
 }
 
 // Handler returns the HTTP handler.
-func (s *Server) Handler() http.Handler { return s.mux }
+func (s *Server) Handler() http.Handler {
+	return AuthMiddleware(s.apiToken, s.mux)
+}
 
 // Service returns the underlying service.
 func (s *Server) Service() *service.Service { return s.svc }
@@ -69,6 +83,9 @@ type fsRequest struct {
 	NewName   string     `json:"new_name,omitempty"`
 	Attr      *meta.Attr `json:"attr,omitempty"`
 	Force     bool       `json:"force,omitempty"`
+	ChunkID   string     `json:"chunk_id,omitempty"`
+	Replicas  []string   `json:"replicas,omitempty"`
+	Epoch     uint64     `json:"epoch,omitempty"`
 }
 
 type fsResponse struct {
@@ -80,10 +97,16 @@ type fsResponse struct {
 	Status           string                `json:"status,omitempty"`
 	NodeState        string                `json:"node_state,omitempty"`
 	ClusterEpoch     uint64                `json:"cluster_epoch,omitempty"`
+	Role             string                `json:"role,omitempty"`
 	Drained          bool                  `json:"drained,omitempty"`
 	RemainingChunks  int                   `json:"remaining_chunks,omitempty"`
 	Stats            *service.Stats        `json:"stats,omitempty"`
 	GCRemoved        int                   `json:"gc_removed,omitempty"`
+	Overview         *service.ClusterOverview `json:"overview,omitempty"`
+	Repair           *service.RepairInfo   `json:"repair,omitempty"`
+	RepairFixed      int                   `json:"repair_fixed,omitempty"`
+	RepairFailed     int                   `json:"repair_failed,omitempty"`
+	RepairPending    int                   `json:"repair_pending,omitempty"`
 }
 
 type joinRequest struct {
@@ -98,16 +121,15 @@ type removeRequest struct {
 	ID string `json:"id"`
 }
 
+func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
+	s.svc.UpdateMetrics()
+	promhttp.Handler().ServeHTTP(w, r)
+}
+
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
-	status, state, epoch, isLeader, pending := s.svc.Health()
+	status, state, role, epoch, pending := s.svc.Health()
 	writeJSON(w, http.StatusOK, fsResponse{
-		Status: status, NodeState: state, ClusterEpoch: epoch,
-		Error: func() string {
-			if isLeader {
-				return "leader"
-			}
-			return "follower"
-		}(),
+		Status: status, NodeState: state, ClusterEpoch: epoch, Role: role,
 		RemainingChunks: pending,
 	})
 }
@@ -356,6 +378,26 @@ func (s *Server) setattr(ctx context.Context, req fsRequest) (fsResponse, int) {
 	return fsResponse{Attr: req.Attr}, http.StatusOK
 }
 
+func (s *Server) registrySet(ctx context.Context, req fsRequest) (fsResponse, int) {
+	if req.ChunkID == "" {
+		return fsResponse{Error: "missing chunk_id"}, http.StatusBadRequest
+	}
+	if err := s.svc.ApplyRegistrySet(ctx, req.ChunkID, req.Replicas, req.Epoch); err != nil {
+		return fsResponse{Error: err.Error()}, http.StatusInternalServerError
+	}
+	return fsResponse{}, http.StatusOK
+}
+
+func (s *Server) registryDelete(ctx context.Context, req fsRequest) (fsResponse, int) {
+	if req.ChunkID == "" {
+		return fsResponse{Error: "missing chunk_id"}, http.StatusBadRequest
+	}
+	if err := s.svc.ApplyRegistryDelete(ctx, req.ChunkID); err != nil {
+		return fsResponse{Error: err.Error()}, http.StatusInternalServerError
+	}
+	return fsResponse{}, http.StatusOK
+}
+
 func (s *Server) handleChunks(w http.ResponseWriter, r *http.Request) {
 	id := strings.TrimPrefix(r.URL.Path, "/chunks/")
 	if id == "" {
@@ -372,6 +414,7 @@ func (s *Server) handleChunks(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write(data)
 	case http.MethodPut:
+		r.Body = http.MaxBytesReader(w, r.Body, 16<<20)
 		data, err := io.ReadAll(r.Body)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -396,7 +439,7 @@ func (s *Server) handleChunks(w http.ResponseWriter, r *http.Request) {
 }
 
 func decodeJSON(r *http.Request, v any) error {
-	defer r.Body.Close()
+	defer func() { _ = r.Body.Close() }()
 	return json.NewDecoder(r.Body).Decode(v)
 }
 

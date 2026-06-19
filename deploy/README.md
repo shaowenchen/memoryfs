@@ -241,18 +241,18 @@ kubectl -n memoryfs exec memoryfs-0 -- tar -czf - /data > backup-node0.tar.gz
 
 ---
 
-## HTTP 运维 API
+## 运维 API
 
-```bash
-curl http://node:8080/health
-curl http://node:8080/v1/stats
-curl -X POST http://node:8080/v1/lifecycle/drain
-curl -X POST http://node:8080/v1/lifecycle/ready
-curl -X POST http://node:8080/v1/cluster/leave      # drain + remove self
-curl -X POST http://leader:8080/v1/cluster/remove \ # leader 移除节点
-  -d '{"id":"n4"}'
-curl -X POST http://node:8080/v1/gc
-```
+| 接口 | 方法 | 用途 |
+|------|------|------|
+| `/dashboard` | GET | Web 运维面板 |
+| `/metrics` | GET | Prometheus 指标 |
+| `/v1/cluster/overview` | GET | 集群聚合状态 |
+| `/v1/repair` | GET | 副本修复队列 |
+| `/v1/repair/run` | POST | 手动触发副本修复 |
+| `/health` | GET | 健康检查 + epoch |
+| `/v1/stats` | GET | 节点存储统计 |
+| `/v1/gc` | POST | 孤儿 chunk 清理 |
 
 ---
 

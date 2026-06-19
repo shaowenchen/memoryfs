@@ -25,10 +25,10 @@ func New(svc *service.Service) *Server {
 }
 
 func (s *Server) Health(_ context.Context, _ *pb.HealthRequest) (*pb.HealthResponse, error) {
-	statusStr, state, epoch, leader, pending := s.svc.Health()
+	statusStr, state, role, epoch, pending := s.svc.Health()
 	return &pb.HealthResponse{
 		Status: statusStr, NodeState: state, ClusterEpoch: epoch,
-		IsLeader: leader, PendingDrainChunks: int32(pending),
+		IsLeader: role == "leader", PendingDrainChunks: int32(pending),
 	}, nil
 }
 

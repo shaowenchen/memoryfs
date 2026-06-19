@@ -63,6 +63,11 @@ type Backend interface {
 	Close() error
 }
 
+type inodeLink struct {
+	Parent uint64 `json:"parent"`
+	Name   string `json:"name"`
+}
+
 // LocalStore implements Backend on top of kv.KV.
 type LocalStore struct {
 	kv kv.KV
@@ -99,14 +104,19 @@ func (s *LocalStore) initRoot(ctx context.Context) error {
 	}
 	return s.kv.Batch([]kv.Op{
 		{Type: kv.OpSet, Key: inoKey(rootIno), Value: data},
-		{Type: kv.OpSet, Key: nextInoKey(), Value: []byte(strconv.FormatUint(rootIno, 10))},
+		{Type: kv.OpIncr, Key: nextInoKey()},
 		{Type: kv.OpSAdd, Key: inodeIndexKey, Member: strconv.FormatUint(rootIno, 10)},
 	})
 }
 
-func inoKey(ino uint64) string       { return fmt.Sprintf("%s:ino:%d", keyPrefix, ino) }
-func direntKey(parentIno uint64) string { return fmt.Sprintf("%s:dirent:%d", keyPrefix, parentIno) }
-func nextInoKey() string             { return keyPrefix + ":next_ino" }
+func inoKey(ino uint64) string          { return fmt.Sprintf("%s:ino:%d", keyPrefix, ino) }
+func direntKey(parentIno uint64) string  { return fmt.Sprintf("%s:dirent:%d", keyPrefix, parentIno) }
+func nextInoKey() string                 { return keyPrefix + ":next_ino" }
+func inodeLinkKey(ino uint64) string     { return fmt.Sprintf("%s:ilink:%d", keyPrefix, ino) }
+
+func encodeInodeLink(parentIno uint64, name string) ([]byte, error) {
+	return json.Marshal(inodeLink{Parent: parentIno, Name: name})
+}
 
 func (s *LocalStore) GetAttr(_ context.Context, ino uint64) (*Attr, error) {
 	data, err := s.kv.Get(inoKey(ino))
@@ -184,12 +194,17 @@ func (s *LocalStore) Mkdir(_ context.Context, parentIno uint64, name string, mod
 	if err != nil {
 		return nil, err
 	}
+	linkData, err := encodeInodeLink(parentIno, name)
+	if err != nil {
+		return nil, err
+	}
 	err = s.kv.Batch([]kv.Op{
 		{Type: kv.OpHSet, Key: direntKey(parentIno), Field: name, Value: []byte(strconv.FormatUint(ino, 10))},
 		{Type: kv.OpSet, Key: inoKey(ino), Value: data},
 		{Type: kv.OpHSet, Key: direntKey(ino), Field: ".", Value: []byte(strconv.FormatUint(ino, 10))},
 		{Type: kv.OpHSet, Key: direntKey(ino), Field: "..", Value: []byte(strconv.FormatUint(parentIno, 10))},
 		{Type: kv.OpSAdd, Key: inodeIndexKey, Member: strconv.FormatUint(ino, 10)},
+		{Type: kv.OpSet, Key: inodeLinkKey(ino), Value: linkData},
 	})
 	if err != nil {
 		return nil, err
@@ -225,10 +240,15 @@ func (s *LocalStore) Create(_ context.Context, parentIno uint64, name string, mo
 	if err != nil {
 		return nil, err
 	}
+	linkData, err := encodeInodeLink(parentIno, name)
+	if err != nil {
+		return nil, err
+	}
 	err = s.kv.Batch([]kv.Op{
 		{Type: kv.OpHSet, Key: direntKey(parentIno), Field: name, Value: []byte(strconv.FormatUint(ino, 10))},
 		{Type: kv.OpSet, Key: inoKey(ino), Value: data},
 		{Type: kv.OpSAdd, Key: inodeIndexKey, Member: strconv.FormatUint(ino, 10)},
+		{Type: kv.OpSet, Key: inodeLinkKey(ino), Value: linkData},
 	})
 	if err != nil {
 		return nil, err
@@ -266,10 +286,15 @@ func (s *LocalStore) Symlink(_ context.Context, parentIno uint64, name, target s
 	if err != nil {
 		return nil, err
 	}
+	linkData, err := encodeInodeLink(parentIno, name)
+	if err != nil {
+		return nil, err
+	}
 	err = s.kv.Batch([]kv.Op{
 		{Type: kv.OpHSet, Key: direntKey(parentIno), Field: name, Value: []byte(strconv.FormatUint(ino, 10))},
 		{Type: kv.OpSet, Key: inoKey(ino), Value: data},
 		{Type: kv.OpSAdd, Key: inodeIndexKey, Member: strconv.FormatUint(ino, 10)},
+		{Type: kv.OpSet, Key: inodeLinkKey(ino), Value: linkData},
 	})
 	if err != nil {
 		return nil, err
@@ -297,6 +322,7 @@ func (s *LocalStore) Unlink(_ context.Context, parentIno uint64, name string) (*
 		{Type: kv.OpHDel, Key: direntKey(parentIno), Field: name},
 		{Type: kv.OpDel, Key: inoKey(ino)},
 		{Type: kv.OpSRem, Key: inodeIndexKey, Member: strconv.FormatUint(ino, 10)},
+		{Type: kv.OpDel, Key: inodeLinkKey(ino)},
 	})
 	if err != nil {
 		return nil, err
@@ -332,6 +358,7 @@ func (s *LocalStore) Rmdir(_ context.Context, parentIno uint64, name string) err
 		{Type: kv.OpDel, Key: inoKey(ino)},
 		{Type: kv.OpDel, Key: direntKey(ino)},
 		{Type: kv.OpSRem, Key: inodeIndexKey, Member: strconv.FormatUint(ino, 10)},
+		{Type: kv.OpDel, Key: inodeLinkKey(ino)},
 	})
 }
 
@@ -354,9 +381,18 @@ func (s *LocalStore) Rename(_ context.Context, oldParent, newParent uint64, oldN
 	if err != nil {
 		return err
 	}
+	ino, err := strconv.ParseUint(string(child), 10, 64)
+	if err != nil {
+		return err
+	}
+	linkData, err := encodeInodeLink(newParent, newName)
+	if err != nil {
+		return err
+	}
 	return s.kv.Batch([]kv.Op{
 		{Type: kv.OpHDel, Key: direntKey(oldParent), Field: oldName},
 		{Type: kv.OpHSet, Key: direntKey(newParent), Field: newName, Value: child},
+		{Type: kv.OpSet, Key: inodeLinkKey(ino), Value: linkData},
 	})
 }
 
@@ -400,10 +436,20 @@ func (s *LocalStore) PurgeInode(_ context.Context, ino uint64) error {
 	if ino == rootIno {
 		return fmt.Errorf("cannot purge root inode")
 	}
-	return s.kv.Batch([]kv.Op{
+	ops := []kv.Op{
 		{Type: kv.OpDel, Key: inoKey(ino)},
 		{Type: kv.OpSRem, Key: inodeIndexKey, Member: strconv.FormatUint(ino, 10)},
-	})
+		{Type: kv.OpDel, Key: inodeLinkKey(ino)},
+	}
+	if data, err := s.kv.Get(inodeLinkKey(ino)); err == nil {
+		var link inodeLink
+		if err := json.Unmarshal(data, &link); err == nil {
+			ops = append([]kv.Op{
+				{Type: kv.OpHDel, Key: direntKey(link.Parent), Field: link.Name},
+			}, ops...)
+		}
+	}
+	return s.kv.Batch(ops)
 }
 
 func (s *LocalStore) Close() error { return s.kv.Close() }

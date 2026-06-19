@@ -76,6 +76,10 @@ spec:
               value: {{ .Values.node.maxFileAge | quote }}
             - name: MEMORYFS_HEADLESS_SERVICE
               value: {{ include "memoryfs.headless" . }}
+            {{- if .Values.apiToken }}
+            - name: MEMORYFS_API_TOKEN
+              value: {{ .Values.apiToken | quote }}
+            {{- end }}
           readinessProbe:
             httpGet:
               path: /health

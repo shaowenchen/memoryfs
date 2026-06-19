@@ -71,6 +71,13 @@ func (m *Manager) MarkDrained() {
 	atomic.StoreInt32(&m.pendingDrain, 0)
 }
 
+// SetEpoch sets cluster epoch from persisted KV.
+func (m *Manager) SetEpoch(epoch uint64) {
+	if epoch > 0 {
+		m.epoch.Store(epoch)
+	}
+}
+
 // Ready reactivates node after startup.
 func (m *Manager) Ready() {
 	m.mu.Lock()

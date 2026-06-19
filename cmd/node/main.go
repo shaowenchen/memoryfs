@@ -49,6 +49,7 @@ func main() {
 	bootstrap := flag.Bool("bootstrap", false, "bootstrap a new raft cluster")
 	standalone := flag.Bool("standalone", false, "run without raft (single node)")
 	join := flag.String("join", "", "join an existing cluster via leader HTTP URL")
+	apiToken := flag.String("api-token", "", "optional bearer token for mutating API calls")
 	flag.Parse()
 
 	httpURL := normalizeHTTP(*httpAddr)
@@ -80,7 +81,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("start node: %v", err)
 	}
-	defer rn.Close()
+	defer func() { _ = rn.Close() }()
 
 	metaStore, err := meta.NewLocalStore(rn.KV())
 	if err != nil {
@@ -118,6 +119,7 @@ func main() {
 		ReplicaFactor: *replicaFactor,
 		DefaultTTL:    *defaultTTL,
 	})
+	svc.LoadClusterConfig()
 
 	if rn.IsLeader() || *standalone {
 		if err := rn.RegisterSelf(); err != nil {
@@ -130,15 +132,13 @@ func main() {
 
 	svc.Ready(context.Background())
 
-	if *gcInterval > 0 {
-		svc.StartMaintenance(maintCtx, service.MaintenanceConfig{
-			GCInterval: *gcInterval,
-			TTL:        *maxFileAge,
-			DefaultTTL: *defaultTTL,
-		})
-	}
+	svc.StartMaintenance(maintCtx, service.MaintenanceConfig{
+		GCInterval: *gcInterval,
+		TTL:        *maxFileAge,
+		DefaultTTL: *defaultTTL,
+	})
 
-	httpSrv := node.NewServer(svc)
+	httpSrv := node.NewServer(svc, *apiToken)
 	grpcSrv := grpc.NewServer(grpc.MaxRecvMsgSize(16<<20), grpc.MaxSendMsgSize(16<<20))
 	pb.RegisterMemoryFSServer(grpcSrv, grpcserver.New(svc))
 
@@ -151,11 +151,11 @@ func main() {
 		}()
 	}
 
-	go serveHTTP(*httpAddr, httpSrv.Handler())
+	go serveHTTP(*httpAddr, httpSrv.Handler(), &httpServer)
 	go serveGRPC(*grpcAddr, grpcSrv)
 
-	log.Printf("memoryfs node %s: http=%s grpc=%s chunk_dir=%s rf=%d",
-		*id, *httpAddr, *grpcAddr, chunkPath, *replicaFactor)
+	log.Printf("memoryfs node %s: http=%s grpc=%s chunk_dir=%s rf=%d dashboard=http://%s/",
+		*id, *httpAddr, *grpcAddr, chunkPath, svc.ReplicaFactor(), dashboardAddr(*httpAddr))
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
@@ -171,12 +171,17 @@ func main() {
 
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer shutdownCancel()
+	if httpServer != nil {
+		_ = httpServer.Shutdown(shutdownCtx)
+	}
 	grpcSrv.GracefulStop()
-	_ = shutdownCtx
 }
 
-func serveHTTP(addr string, handler http.Handler) {
+var httpServer *http.Server
+
+func serveHTTP(addr string, handler http.Handler, ref **http.Server) {
 	server := &http.Server{Addr: addr, Handler: handler}
+	*ref = server
 	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatalf("http listen: %v", err)
 	}
@@ -216,9 +221,19 @@ func joinCluster(leaderURL, id, raftAddr, httpAddr, grpcAddr, rdmaAddr string) e
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= 300 {
 		return fmt.Errorf("join status %d", resp.StatusCode)
 	}
 	return nil
+}
+
+func dashboardAddr(httpListen string) string {
+	if strings.HasPrefix(httpListen, ":") {
+		return "127.0.0.1" + httpListen + "/dashboard"
+	}
+	if strings.HasPrefix(httpListen, "http") {
+		return strings.TrimRight(httpListen, "/") + "/dashboard"
+	}
+	return "http://" + httpListen + "/dashboard"
 }

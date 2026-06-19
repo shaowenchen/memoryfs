@@ -202,7 +202,7 @@ func (r *RemoteMeta) doPost(ctx context.Context, url string, req fsReq, resp *fs
 	if err != nil {
 		return err
 	}
-	defer httpResp.Body.Close()
+	defer func() { _ = httpResp.Body.Close() }()
 	raw, err := io.ReadAll(httpResp.Body)
 	if err != nil {
 		return err

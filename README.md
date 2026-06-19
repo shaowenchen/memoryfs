@@ -10,7 +10,7 @@
 |------|------|------|
 | **HTTP REST** | 8080 | 通用 API、调试、FUSE 客户端 |
 | **gRPC** | 9090 | 高性能元数据 + Chunk 流式传输 |
-| **RDMA** | 9092 | 大块零拷贝传输（`-tags rdma` 启用） |
+| **RDMA** | 9092 | 实验性：默认降级为 gRPC（`-tags rdma` 启用 TCP 优化传输） |
 
 ```
 FUSE/mount ──HTTP/gRPC──► Node 集群
@@ -55,13 +55,13 @@ grpcurl -plaintext -d '{"parent_ino":1,"name":"test.txt"}' \
   127.0.0.1:9090 memoryfs.v1.MemoryFS/Lookup
 ```
 
-### RDMA
-默认构建下 RDMA 自动降级到 gRPC。Linux 上启用硬件 RDMA：
+### RDMA（实验性）
+默认构建下 RDMA 自动降级到 gRPC。Linux 上 `-tags rdma` 启用优化 TCP 传输（非硬件 RDMA）：
 ```bash
 go build -tags rdma -o bin/node ./cmd/node
 ```
 
-传输优先级：**RDMA → gRPC → HTTP**（自动 fallback）。
+传输优先级：**RDMA → gRPC → HTTP**（自动 fallback，RDMA 不可用时透明降级）。
 
 ## 前置依赖
 
@@ -127,7 +127,7 @@ go run ./cmd/mount -mount /tmp/memoryfs -nodes http://127.0.0.1:8080,http://127.
 ### 解决方案
 
 #### 1. 元数据：Raft 保证
-- 元数据通过 Raft 复制到多数节点
+- 元数据通过 Raft 复制到多数节点（Raft log 持久化到 `{data}/{id}/raft.db`）
 - 滚动更新顺序：**Follower 先更新 → Leader 最后更新**
 - 任意时刻集群维持 quorum，元数据不丢
 
@@ -206,6 +206,23 @@ lifecycle:
 | `-gc-interval` | 5m | 孤儿 chunk GC 间隔（0=关闭） |
 | `-default-ttl` | 0 | 新建文件 TTL（0=关闭） |
 | `-max-file-age` | 0 | 按 mtime 过期清理（0=关闭） |
+| `-api-token` | | 可选 API Bearer Token（保护写操作） |
+
+## 运维面板
+
+启动节点后访问：
+
+```
+http://127.0.0.1:8080/dashboard
+```
+
+面板功能：集群节点状态、Leader/Epoch、磁盘用量、副本修复队列、Drain/Ready/GC/Repair 操作。
+
+Prometheus 指标：`GET /metrics`
+
+```bash
+curl -s http://127.0.0.1:8080/metrics | grep memoryfs_
+```
 | `-bootstrap` | | 初始化集群 |
 | `-standalone` | | 单节点模式 |
 | `-join` | | 加入集群 |

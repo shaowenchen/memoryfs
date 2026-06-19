@@ -156,7 +156,10 @@ curl -X POST http://127.0.0.1:8080/v1/gc
 | 孤儿 chunk GC | ✅ | 后台 + `/v1/gc` |
 | 节点统计 | ✅ | `/v1/stats` |
 | 节点间 TLS/认证 | ❌ | 生产需 mTLS 或网络隔离 |
-| Prometheus metrics | ❌ | 可基于 `/v1/stats` 做 exporter |
+| Prometheus `/metrics` | ✅ | 节点级指标，Helm 可选 ServiceMonitor |
+| Web 运维面板 | ✅ | `/dashboard` |
+| 副本修复队列 | ✅ | 后台 + `/v1/repair/run` |
+| 节点间 TLS/认证 | 部分 | `-api-token` Bearer 认证 |
 | 分布式文件锁 | ❌ | 应用层协调 |
 | 跨节点 chunk 迁移均衡 | ❌ | 仅 drain 时复制 |
 | 目录级配额 | ❌ | 仅节点级磁盘配额 |

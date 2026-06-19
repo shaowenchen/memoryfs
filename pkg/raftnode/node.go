@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/hashicorp/raft"
+	raftboltdb "github.com/hashicorp/raft-boltdb/v2"
 
 	"github.com/shaowenchen/memoryfs/pkg/kv"
 )
@@ -26,10 +27,11 @@ type Config struct {
 
 // Node wraps a raft instance and its FSM.
 type Node struct {
-	raft   *raft.Raft
-	fsm    *FSM
-	kv     kv.KV
-	config Config
+	raft      *raft.Raft
+	fsm       *FSM
+	kv        kv.KV
+	boltStore *raftboltdb.BoltStore
+	config    Config
 }
 
 // Start creates and starts a raft node or standalone KV node.
@@ -56,8 +58,13 @@ func Start(cfg Config) (*Node, error) {
 	if err != nil {
 		return nil, err
 	}
-	logStore := raft.NewInmemStore()
-	stableStore := raft.NewInmemStore()
+	raftDBPath := filepath.Join(cfg.DataDir, "raft.db")
+	boltStore, err := raftboltdb.NewBoltStore(raftDBPath)
+	if err != nil {
+		return nil, err
+	}
+	logStore := boltStore
+	stableStore := boltStore
 
 	transport, err := newTransport(cfg.RaftAddr)
 	if err != nil {
@@ -75,17 +82,22 @@ func Start(cfg Config) (*Node, error) {
 	}
 
 	node := &Node{
-		raft:   r,
-		fsm:    fsm,
-		kv:     kv.NewRaftKV(r, fsm.KV()),
-		config: cfg,
+		raft:      r,
+		fsm:       fsm,
+		kv:        kv.NewRaftKV(r, fsm.KV()),
+		boltStore: boltStore,
+		config:    cfg,
 	}
 
 	if cfg.Bootstrap {
+		raftAddr := raft.ServerAddress(cfg.AdvertiseRaft)
+		if raftAddr == "" {
+			raftAddr = transport.LocalAddr()
+		}
 		configuration := raft.Configuration{
 			Servers: []raft.Server{{
 				ID:      raft.ServerID(cfg.ID),
-				Address: transport.LocalAddr(),
+				Address: raftAddr,
 			}},
 		}
 		if err := r.BootstrapCluster(configuration).Error(); err != nil {
@@ -200,7 +212,12 @@ func (n *Node) RegisterSelf() error {
 func (n *Node) Close() error {
 	if n.raft != nil {
 		future := n.raft.Shutdown()
-		return future.Error()
+		if err := future.Error(); err != nil {
+			return err
+		}
+	}
+	if n.boltStore != nil {
+		return n.boltStore.Close()
 	}
 	return nil
 }

@@ -43,7 +43,7 @@ func (t *HTTPTransport) putChunk(ctx context.Context, nodeURL, chunkID string, d
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
 		body, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("http put chunk: %s", body)
@@ -61,7 +61,7 @@ func (t *HTTPTransport) GetChunk(ctx context.Context, nodeURL, chunkID string) (
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode == http.StatusNotFound {
 		return nil, fmt.Errorf("chunk not found")
 	}
@@ -82,6 +82,6 @@ func (t *HTTPTransport) DeleteChunk(ctx context.Context, nodeURL, chunkID string
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	return nil
 }

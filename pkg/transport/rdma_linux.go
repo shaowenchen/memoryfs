@@ -59,7 +59,7 @@ func (t *RDMATransport) rdmaPut(rdmaAddr, chunkID string, data []byte) error {
 	if err != nil {
 		return err
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	header := fmt.Sprintf("PUT %s %d\n", chunkID, len(data))
 	if _, err := conn.Write([]byte(header)); err != nil {
 		return err
@@ -73,7 +73,7 @@ func (t *RDMATransport) rdmaGet(rdmaAddr, chunkID string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	if _, err := conn.Write([]byte(fmt.Sprintf("GET %s\n", chunkID))); err != nil {
 		return nil, err
 	}

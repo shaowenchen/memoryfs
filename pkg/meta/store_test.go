@@ -53,3 +53,21 @@ func TestLocalStoreSymlink(t *testing.T) {
 		t.Fatalf("target: %q", attr.Target)
 	}
 }
+
+func TestPurgeInodeRemovesDirent(t *testing.T) {
+	store, err := meta.NewLocalStore(kv.NewMemoryKV())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	attr, err := store.Create(ctx, meta.RootIno(), "temp.txt", 0o644, 1000, 1000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.PurgeInode(ctx, attr.Ino); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Lookup(ctx, meta.RootIno(), "temp.txt"); err == nil {
+		t.Fatal("expected dirent removed after purge")
+	}
+}

@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MemoryFS 集群面板</title>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --card: #1a2332;
+      --border: #2d3a4f;
+      --text: #e6edf3;
+      --muted: #8b9cb3;
+      --accent: #3b82f6;
+      --ok: #22c55e;
+      --warn: #f59e0b;
+      --err: #ef4444;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      padding: 1.5rem;
+    }
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1.5rem;
+      flex-wrap: wrap;
+      gap: 1rem;
+    }
+    h1 { font-size: 1.5rem; font-weight: 600; }
+    .sub { color: var(--muted); font-size: 0.875rem; margin-top: 0.25rem; }
+    .toolbar { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; }
+    input, button {
+      background: var(--card);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 0.5rem 0.75rem;
+      border-radius: 6px;
+      font-size: 0.875rem;
+    }
+    input { min-width: 200px; }
+    button {
+      cursor: pointer;
+      background: var(--accent);
+      border-color: var(--accent);
+      font-weight: 500;
+    }
+    button.secondary { background: var(--card); border-color: var(--border); }
+    button.danger { background: #7f1d1d; border-color: #991b1b; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1rem;
+    }
+    .card label { display: block; color: var(--muted); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; }
+    .card .val { font-size: 1.5rem; font-weight: 600; margin-top: 0.35rem; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.875rem;
+    }
+    th, td {
+      text-align: left;
+      padding: 0.75rem;
+      border-bottom: 1px solid var(--border);
+    }
+    th { color: var(--muted); font-weight: 500; }
+    .badge {
+      display: inline-block;
+      padding: 0.15rem 0.5rem;
+      border-radius: 999px;
+      font-size: 0.75rem;
+      font-weight: 500;
+    }
+    .badge.leader { background: #1e3a5f; color: #93c5fd; }
+    .badge.follower { background: #374151; color: #d1d5db; }
+    .badge.active { background: #14532d; color: #86efac; }
+    .badge.draining { background: #713f12; color: #fcd34d; }
+    .badge.drained { background: #450a0a; color: #fca5a5; }
+    .badge.down { background: #450a0a; color: #fca5a5; }
+    .section { margin-bottom: 1.5rem; }
+    .section h2 { font-size: 1rem; margin-bottom: 0.75rem; color: var(--muted); }
+    #status { color: var(--muted); font-size: 0.8rem; }
+    .actions { display: flex; gap: 0.35rem; flex-wrap: wrap; }
+    .actions button { padding: 0.25rem 0.5rem; font-size: 0.75rem; }
+    pre.repair {
+      background: #0d1117;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.75rem;
+      font-size: 0.75rem;
+      overflow: auto;
+      max-height: 200px;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>MemoryFS 集群面板</h1>
+      <p class="sub">节点状态 · 副本修复 · 运维操作</p>
+    </div>
+    <div class="toolbar">
+      <input id="token" type="password" placeholder="API Token (可选)" />
+      <button onclick="refresh()">刷新</button>
+      <button class="secondary" onclick="runRepair()">修复副本</button>
+      <button class="secondary" onclick="runGC()">GC</button>
+    </div>
+  </header>
+
+  <div class="grid" id="summary"></div>
+
+  <div class="section">
+    <h2>集群节点</h2>
+    <div class="card" style="padding:0; overflow:hidden">
+      <table>
+        <thead>
+          <tr>
+            <th>节点</th><th>角色</th><th>状态</th><th>Chunks</th><th>磁盘</th><th>内存缓存</th><th>Epoch</th><th>操作</th>
+          </tr>
+        </thead>
+        <tbody id="nodes"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>副本修复队列</h2>
+    <div class="card">
+      <pre class="repair" id="repair">加载中...</pre>
+    </div>
+  </div>
+
+  <p id="status"></p>
+
+  <script>
+    const fmtBytes = n => {
+      if (!n) return '0 B';
+      const u = ['B','KB','MB','GB','TB'];
+      let i = 0; while (n >= 1024 && i < u.length-1) { n/=1024; i++; }
+      return n.toFixed(1) + ' ' + u[i];
+    };
+
+    function headers() {
+      const h = {'Content-Type':'application/json'};
+      const t = document.getElementById('token').value.trim();
+      if (t) h['Authorization'] = 'Bearer ' + t;
+      return h;
+    }
+
+    async function api(path, method='GET', body) {
+      const opt = {method, headers: headers()};
+      if (body) opt.body = JSON.stringify(body);
+      const r = await fetch(path, opt);
+      if (!r.ok) throw new Error(await r.text() || r.statusText);
+      return r.json();
+    }
+
+    function badge(cls, text) { return `<span class="badge ${cls}">${text}</span>`; }
+
+    async function refresh() {
+      const st = document.getElementById('status');
+      st.textContent = '刷新中...';
+      try {
+        const data = await api('/v1/cluster/overview');
+        const ov = data.overview || data;
+        renderSummary(ov);
+        renderNodes(ov.nodes || []);
+        renderRepair(ov.repair || {});
+        st.textContent = '更新于 ' + new Date().toLocaleTimeString();
+      } catch (e) {
+        st.textContent = '错误: ' + e.message;
+      }
+    }
+
+    function renderSummary(ov) {
+      const el = document.getElementById('summary');
+      const cards = [
+        ['Leader', ov.leader || '-'],
+        ['Epoch', ov.cluster_epoch ?? '-'],
+        ['RF', ov.replica_factor ?? '-'],
+        ['节点数', (ov.nodes||[]).length],
+        ['修复队列', ov.repair?.pending ?? 0],
+        ['本节点', ov.node_id || '-'],
+      ];
+      el.innerHTML = cards.map(([l,v]) =>
+        `<div class="card"><label>${l}</label><div class="val">${v}</div></div>`
+      ).join('');
+    }
+
+    function renderNodes(nodes) {
+      const tbody = document.getElementById('nodes');
+      tbody.innerHTML = nodes.map(n => {
+        const role = n.reachable ? badge(n.role||'follower', n.role||'?') : badge('down','不可达');
+        const state = n.reachable ? badge(n.node_state||'active', n.node_state||'?') : badge('down','-');
+        const stats = n.stats || {};
+        return `<tr>
+          <td><code>${n.url||'-'}</code>${n.error?'<br><small style="color:var(--err)">'+n.error+'</small>':''}</td>
+          <td>${role}</td>
+          <td>${state}</td>
+          <td>${stats.chunk_count??'-'}</td>
+          <td>${fmtBytes(stats.disk_bytes)}</td>
+          <td>${fmtBytes(stats.mem_cache_bytes)}</td>
+          <td>${n.cluster_epoch??'-'}</td>
+          <td class="actions">
+            <button class="secondary" onclick="nodeAction('${n.url}','/v1/lifecycle/ready')">Ready</button>
+            <button class="danger" onclick="nodeAction('${n.url}','/v1/lifecycle/drain')">Drain</button>
+          </td>
+        </tr>`;
+      }).join('');
+    }
+
+    function renderRepair(repair) {
+      const el = document.getElementById('repair');
+      if (!repair.pending) { el.textContent = '队列为空'; return; }
+      el.textContent = JSON.stringify(repair, null, 2);
+    }
+
+    async function nodeAction(base, path) {
+      try {
+        const t = document.getElementById('token').value.trim();
+        const h = {'Content-Type':'application/json'};
+        if (t) h['Authorization'] = 'Bearer ' + t;
+        await fetch(base.replace(/\/$/,'') + path, {method:'POST', headers:h, body:'{}'});
+        refresh();
+      } catch (e) { alert(e.message); }
+    }
+
+    async function runRepair() {
+      try {
+        await api('/v1/repair/run', 'POST', {});
+        refresh();
+      } catch (e) { alert(e.message); }
+    }
+
+    async function runGC() {
+      try {
+        await api('/v1/gc', 'POST', {});
+        refresh();
+      } catch (e) { alert(e.message); }
+    }
+
+    refresh();
+    setInterval(refresh, 5000);
+  </script>
+</body>
+</html>

@@ -46,7 +46,7 @@ func (t *GRPCTransport) putChunk(ctx context.Context, nodeURL, chunkID string, d
 	if err != nil {
 		return err
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	client := pb.NewMemoryFSClient(conn)
 	stream, err := client.PutChunk(ctx)
 	if err != nil {
@@ -64,7 +64,7 @@ func (t *GRPCTransport) GetChunk(ctx context.Context, nodeURL, chunkID string) (
 	if err != nil {
 		return nil, err
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	client := pb.NewMemoryFSClient(conn)
 	stream, err := client.GetChunk(ctx, &pb.GetChunkRequest{ChunkId: chunkID})
 	if err != nil {
@@ -92,7 +92,7 @@ func (t *GRPCTransport) DeleteChunk(ctx context.Context, nodeURL, chunkID string
 	if err != nil {
 		return err
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	client := pb.NewMemoryFSClient(conn)
 	_, err = client.DeleteChunk(ctx, &pb.DeleteChunkRequest{ChunkId: chunkID})
 	return err

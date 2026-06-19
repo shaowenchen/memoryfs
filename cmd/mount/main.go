@@ -42,7 +42,7 @@ func main() {
 	}
 
 	metaStore := client.NewRemoteMeta(nodeList)
-	defer metaStore.Close()
+	defer func() { _ = metaStore.Close() }()
 
 	chunks := storage.NewChunkStore(metaStore, nodeList, *replicaFactor)
 	if err := chunks.RefreshNodes(context.Background()); err != nil {

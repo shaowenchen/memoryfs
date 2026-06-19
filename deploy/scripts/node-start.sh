@@ -16,6 +16,7 @@ DISK_QUOTA_GB="${MEMORYFS_DISK_QUOTA_GB:-0}"
 GC_INTERVAL="${MEMORYFS_GC_INTERVAL:-5m}"
 DEFAULT_TTL="${MEMORYFS_DEFAULT_TTL:-0}"
 MAX_FILE_AGE="${MEMORYFS_MAX_FILE_AGE:-0}"
+API_TOKEN="${MEMORYFS_API_TOKEN:-}"
 BOOTSTRAP="${MEMORYFS_BOOTSTRAP:-false}"
 STANDALONE="${MEMORYFS_STANDALONE:-false}"
 JOIN="${MEMORYFS_JOIN:-}"
@@ -62,5 +63,6 @@ set -- node \
 [ "${BOOTSTRAP}" = "true" ] && set -- "$@" -bootstrap
 [ "${STANDALONE}" = "true" ] && set -- "$@" -standalone
 [ -n "${JOIN}" ] && set -- "$@" -join "${JOIN}"
+[ -n "${API_TOKEN}" ] && set -- "$@" -api-token "${API_TOKEN}"
 
 exec /app/node "$@"

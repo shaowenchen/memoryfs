@@ -25,7 +25,7 @@ func (s *Service) Stats() Stats {
 		ChunkCount:    s.cfg.Chunks.Count(),
 		ReplicaFactor: s.cfg.ReplicaFactor,
 		NodeState:     string(s.cfg.Lifecycle.State()),
-		ClusterEpoch:  s.cfg.Lifecycle.Epoch(),
+		ClusterEpoch:  s.syncClusterEpoch(),
 	}
 	if ts, ok := s.cfg.Chunks.(*chunk.TieredStore); ok {
 		st.MemCacheBytes = ts.MemUsage()
@@ -63,23 +63,26 @@ type MaintenanceConfig struct {
 	DefaultTTL time.Duration
 }
 
-// StartMaintenance runs periodic GC and TTL expiry sweeps.
+// StartMaintenance runs periodic GC, TTL expiry, and replica repair sweeps.
 func (s *Service) StartMaintenance(ctx context.Context, cfg MaintenanceConfig) {
-	if cfg.GCInterval <= 0 {
-		cfg.GCInterval = 5 * time.Minute
+	interval := cfg.GCInterval
+	if interval <= 0 {
+		interval = time.Minute
 	}
 	go func() {
-		ticker := time.NewTicker(cfg.GCInterval)
+		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				if n, err := s.RunGC(ctx); err != nil {
-					log.Printf("gc: %v", err)
-				} else if n > 0 {
-					log.Printf("gc: removed %d orphan chunks", n)
+				if cfg.GCInterval > 0 {
+					if n, err := s.RunGC(ctx); err != nil {
+						log.Printf("gc: %v", err)
+					} else if n > 0 {
+					 log.Printf("gc: removed %d orphan chunks", n)
+					}
 				}
 				if cfg.TTL > 0 && s.IsLeader() {
 					if n, err := s.ExpireFiles(ctx, cfg.TTL); err != nil {
@@ -87,6 +90,9 @@ func (s *Service) StartMaintenance(ctx context.Context, cfg MaintenanceConfig) {
 					} else if n > 0 {
 						log.Printf("ttl: expired %d files", n)
 					}
+				}
+				if n, f := s.RunRepair(ctx); n > 0 || f > 0 {
+					log.Printf("repair: fixed=%d failed=%d pending=%d", n, f, s.RepairInfo(0).Pending)
 				}
 			}
 		}
@@ -131,7 +137,7 @@ func (s *Service) expireFile(ctx context.Context, attr *meta.Attr) error {
 	for _, id := range attr.Chunks {
 		_ = s.cfg.Chunks.Delete(id)
 		if s.cfg.Registry != nil {
-			_ = s.cfg.Registry.Delete(id)
+			_ = s.DeleteChunkRegistry(ctx, id)
 		}
 	}
 	return s.cfg.Meta.PurgeInode(ctx, attr.Ino)

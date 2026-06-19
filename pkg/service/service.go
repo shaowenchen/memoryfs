@@ -30,6 +30,7 @@ type Config struct {
 	Transport     transport.ChunkTransport
 	ReplicaFactor int
 	DefaultTTL    time.Duration
+	RepairQueue   *RepairQueue
 }
 
 // Service implements core MemoryFS node logic shared by HTTP and gRPC.
@@ -44,6 +45,9 @@ func New(cfg Config) *Service {
 	}
 	if cfg.Lifecycle == nil {
 		cfg.Lifecycle = lifecycle.NewManager()
+	}
+	if cfg.RepairQueue == nil {
+		cfg.RepairQueue = NewRepairQueue()
 	}
 	return &Service{cfg: cfg}
 }
@@ -92,9 +96,13 @@ func (s *Service) Join(ctx context.Context, id, raftAddr, httpAddr, grpcAddr, rd
 	if rdmaAddr != "" {
 		ops = append(ops, kv.Op{Type: kv.OpSet, Key: nodeRDMAKey(id), Value: []byte(rdmaAddr)})
 	}
-	s.cfg.Lifecycle.BumpEpoch()
+	ops = append(ops, kv.Op{Type: kv.OpIncr, Key: clusterEpochKey})
 	if rkv, ok := s.cfg.RaftNode.KV().(interface{ Batch([]kv.Op) error }); ok {
-		return rkv.Batch(ops)
+		if err := rkv.Batch(ops); err != nil {
+			return err
+		}
+		s.syncClusterEpoch()
+		return nil
 	}
 	return fmt.Errorf("kv batch not supported")
 }
@@ -111,17 +119,21 @@ func (s *Service) RemoveNode(ctx context.Context, id string) error {
 	if err := s.cfg.RaftNode.RemoveVoter(id); err != nil {
 		return err
 	}
+	_ = raftData
 	ops := []kv.Op{
 		{Type: kv.OpHDel, Key: raftnode.NodesKey(), Field: id},
 		{Type: kv.OpDel, Key: raftnode.NodeHTTPKey(id)},
 		{Type: kv.OpDel, Key: raftnode.NodeRaftKey(id)},
 		{Type: kv.OpDel, Key: nodeGRPCKey(id)},
 		{Type: kv.OpDel, Key: nodeRDMAKey(id)},
+		{Type: kv.OpIncr, Key: clusterEpochKey},
 	}
-	_ = raftData
-	s.cfg.Lifecycle.BumpEpoch()
 	if rkv, ok := s.cfg.RaftNode.KV().(interface{ Batch([]kv.Op) error }); ok {
-		return rkv.Batch(ops)
+		if err := rkv.Batch(ops); err != nil {
+			return err
+		}
+		s.syncClusterEpoch()
+		return nil
 	}
 	return fmt.Errorf("kv batch not supported")
 }
@@ -156,7 +168,7 @@ func (s *Service) requestRemoveNode(ctx context.Context, leader, id string) erro
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= 300 {
 		return fmt.Errorf("remove node status %d", resp.StatusCode)
 	}
@@ -192,17 +204,26 @@ func (s *Service) PutChunk(ctx context.Context, chunkID string, data []byte) ([]
 		}
 	}
 
+	replicated := 0
 	for _, node := range replicas {
 		if node == s.cfg.NodeHTTP {
+			if shouldStore {
+				replicated++
+			}
 			continue
 		}
 		if err := s.cfg.Transport.PutChunkReplica(ctx, node, chunkID, data); err != nil {
-			return replicas, fmt.Errorf("replicate to %s: %w", node, err)
+			log.Printf("replicate %s -> %s: %v", chunkID, node, err)
+			continue
 		}
+		replicated++
 	}
 
-	if s.IsLeader() {
-		_ = s.cfg.Registry.Set(chunkID, replicas, s.cfg.Lifecycle.Epoch())
+	if err := s.RecordChunkRegistry(ctx, chunkID, replicas); err != nil {
+		return replicas, fmt.Errorf("registry: %w", err)
+	}
+	if replicated < s.cfg.ReplicaFactor {
+		s.enqueueRepair(chunkID, replicas)
 	}
 	return replicas, nil
 }
@@ -234,10 +255,7 @@ func (s *Service) GetChunk(ctx context.Context, chunkID string) ([]byte, error) 
 // DeleteChunk removes a chunk locally and from registry.
 func (s *Service) DeleteChunk(ctx context.Context, chunkID string) error {
 	_ = s.cfg.Chunks.Delete(chunkID)
-	if s.IsLeader() {
-		_ = s.cfg.Registry.Delete(chunkID)
-	}
-	return nil
+	return s.DeleteChunkRegistry(ctx, chunkID)
 }
 
 // Rebuild pulls missing chunks from peer replicas onto local disk.
@@ -286,8 +304,10 @@ func (s *Service) Drain(ctx context.Context, force bool) (remaining int, drained
 			s.cfg.Lifecycle.SetPendingDrain(len(local))
 			return len(local), false, fmt.Errorf("chunk %s under-replicated (%d/%d)", chunkID, replicated, s.cfg.ReplicaFactor)
 		}
-		if s.IsLeader() {
-			_ = s.cfg.Registry.Set(chunkID, replicas, s.cfg.Lifecycle.Epoch())
+		if err := s.RecordChunkRegistry(ctx, chunkID, replicas); err != nil {
+			if !force {
+				return len(local), false, err
+			}
 		}
 	}
 
@@ -307,8 +327,13 @@ func (s *Service) Ready(ctx context.Context) {
 }
 
 // Health returns node health info.
-func (s *Service) Health() (status, state string, epoch uint64, isLeader bool, pending int) {
-	return "ok", string(s.cfg.Lifecycle.State()), s.cfg.Lifecycle.Epoch(), s.IsLeader(), s.cfg.Lifecycle.PendingDrain()
+func (s *Service) Health() (status, state, role string, epoch uint64, pending int) {
+	epoch = s.syncClusterEpoch()
+	role = "follower"
+	if s.IsLeader() {
+		role = "leader"
+	}
+	return "ok", string(s.cfg.Lifecycle.State()), role, epoch, s.cfg.Lifecycle.PendingDrain()
 }
 
 func (s *Service) replicaSet(ctx context.Context, chunkID string, nodes []string) ([]string, error) {
