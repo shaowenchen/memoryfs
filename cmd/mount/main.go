@@ -44,7 +44,7 @@ func main() {
 	metaStore := client.NewRemoteMeta(nodeList)
 	defer func() { _ = metaStore.Close() }()
 
-	chunks := storage.NewChunkStore(metaStore, nodeList, *replicaFactor)
+	chunks := storage.NewChunkStore(metaStore, metaStore.Nodes(), *replicaFactor)
 	if err := chunks.RefreshNodes(context.Background()); err != nil {
 		log.Printf("warning: refresh nodes: %v", err)
 	}

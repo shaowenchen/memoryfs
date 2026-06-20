@@ -1,5 +1,5 @@
 # Default values for MemoryFS Helm chart.
-# User-facing knobs: replicaCount (nodes), node.storageGB (data per pod, GB).
+# User-facing knobs: replicaCount, replicaFactor, node.storageGB.
 
 replicaCount: 3
 
@@ -83,8 +83,4 @@ service:
 nodeSelector:
   memoryfs.io/node: "true"
 
-# One StatefulSet pod per node (requires >= replicaCount labeled nodes).
-spreadAcrossNodes: true
-
 tolerations: []
-affinity: {}

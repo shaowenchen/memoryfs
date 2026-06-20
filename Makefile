@@ -51,12 +51,14 @@ helm-install:
 	helm upgrade --install memoryfs $(HELM_CHART) \
 		--namespace memoryfs --create-namespace \
 		--set replicaCount=3 \
+		--set replicaFactor=2 \
 		--set node.storageGB=32
 
 helm-install-local:
 	helm upgrade --install memoryfs ./deploy/helm/memoryfs \
 		--namespace memoryfs --create-namespace \
 		--set replicaCount=3 \
+		--set replicaFactor=2 \
 		--set node.storageGB=32
 
 helm-template:

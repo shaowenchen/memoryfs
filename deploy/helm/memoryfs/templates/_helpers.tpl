@@ -44,7 +44,7 @@ podAntiAffinity:
   requiredDuringSchedulingIgnoredDuringExecution:
     - labelSelector:
         matchLabels:
-          {{- include "memoryfs.selectorLabels" . | nindent 10 }}
+          memoryfs.io/role: node
       topologyKey: kubernetes.io/hostname
 {{- end }}
 
@@ -111,9 +111,10 @@ exec /app/entrypoint.sh node-env
 {{- $fullname := include "memoryfs.fullname" . -}}
 {{- $headless := include "memoryfs.headless" . -}}
 {{- $port := .Values.service.httpPort -}}
+{{- $prefix := .Values.dashboard.uriPrefix | default "" -}}
 {{- $count := int .Values.replicaCount -}}
 {{- range $i, $e := until $count -}}
 {{- if $i }},{{ end -}}
-http://{{ $fullname }}-{{ $i }}.{{ $headless }}:{{ $port }}
+http://{{ $fullname }}-{{ $i }}.{{ $headless }}:{{ $port }}{{ $prefix }}
 {{- end -}}
 {{- end }}

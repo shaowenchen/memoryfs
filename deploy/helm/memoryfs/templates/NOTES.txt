@@ -12,5 +12,8 @@ Port-forward:
   kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "memoryfs.fullname" . }} 8080:{{ .Values.service.httpPort }}
 {{- if .Values.mount.enabled }}
 
-FUSE mount: {{ .Values.mount.hostPath }}
+Mount (hostPath): {{ .Values.mount.hostPath }}
+{{- else }}
+
+Mount: helm upgrade {{ .Release.Name }} "${CHART}" -n {{ .Release.Namespace }} --set mount.enabled=true
 {{- end }}

@@ -7,26 +7,53 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/shaowenchen/memoryfs/pkg/cli"
 	"github.com/shaowenchen/memoryfs/pkg/meta"
 )
 
 // RemoteMeta implements meta.Backend over HTTP.
 type RemoteMeta struct {
-	mu       sync.RWMutex
-	nodes    []string
-	leader   string
-	client   *http.Client
+	mu        sync.RWMutex
+	nodes     []string
+	leader    string
+	client    *http.Client
+	uriPrefix string
 }
 
 // NewRemoteMeta creates a remote metadata client.
 func NewRemoteMeta(nodes []string) *RemoteMeta {
-	return &RemoteMeta{
+	r := &RemoteMeta{
 		nodes:  append([]string(nil), nodes...),
 		client: &http.Client{Timeout: 15 * time.Second},
 	}
+	if len(nodes) > 0 {
+		seed := strings.TrimRight(strings.TrimSpace(nodes[0]), "/")
+		r.uriPrefix = cli.NormalizePrefix(cli.DetectPrefix(context.Background(), seed, ""))
+		r.nodes = applyNodePrefix(nodes, r.uriPrefix)
+	}
+	return r
+}
+
+func applyNodePrefix(nodes []string, prefix string) []string {
+	out := make([]string, 0, len(nodes))
+	for _, n := range nodes {
+		if n = strings.TrimSpace(n); n != "" {
+			out = append(out, prefixedNodeURL(n, prefix))
+		}
+	}
+	return out
+}
+
+func prefixedNodeURL(base, prefix string) string {
+	base = strings.TrimRight(base, "/")
+	if prefix == "" || strings.HasSuffix(base, prefix) {
+		return base
+	}
+	return base + prefix
 }
 
 type fsReq struct {
@@ -130,8 +157,9 @@ func (r *RemoteMeta) ListNodes(ctx context.Context) ([]string, error) {
 	}
 	if len(resp.Nodes) > 0 {
 		r.mu.Lock()
-		r.nodes = resp.Nodes
+		r.nodes = applyNodePrefix(resp.Nodes, r.uriPrefix)
 		r.mu.Unlock()
+		return r.nodes, nil
 	}
 	return resp.Nodes, nil
 }
@@ -156,10 +184,11 @@ func (r *RemoteMeta) post(ctx context.Context, path string, req fsReq, resp *fsR
 		if err := r.doPost(ctx, base+path, req, resp); err != nil {
 			lastErr = err
 			if write && resp.Leader != "" {
+				leader := prefixedNodeURL(resp.Leader, r.uriPrefix)
 				r.mu.Lock()
-				r.leader = resp.Leader
+				r.leader = leader
 				r.mu.Unlock()
-				return r.doPost(ctx, resp.Leader+path, req, resp)
+				return r.doPost(ctx, leader+path, req, resp)
 			}
 			continue
 		}
@@ -231,6 +260,15 @@ func (r *RemoteMeta) nodeList() []string {
 	if r.leader != "" {
 		return []string{r.leader}
 	}
+	out := make([]string, len(r.nodes))
+	copy(out, r.nodes)
+	return out
+}
+
+// Nodes returns configured cluster node HTTP URLs (with URI prefix when used).
+func (r *RemoteMeta) Nodes() []string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	out := make([]string, len(r.nodes))
 	copy(out, r.nodes)
 	return out

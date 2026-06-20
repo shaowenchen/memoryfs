@@ -17,6 +17,7 @@ spec:
     metadata:
       labels:
         {{- include "memoryfs.selectorLabels" . | nindent 8 }}
+        memoryfs.io/role: node
     spec:
       serviceAccountName: {{ include "memoryfs.serviceAccountName" . }}
       terminationGracePeriodSeconds: 60
@@ -24,13 +25,8 @@ spec:
       nodeSelector:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- if .Values.affinity }}
-      affinity:
-        {{- toYaml .Values.affinity | nindent 8 }}
-      {{- else if .Values.spreadAcrossNodes }}
       affinity:
         {{- include "memoryfs.spreadAffinity" . | nindent 8 }}
-      {{- end }}
       {{- with .Values.tolerations }}
       tolerations:
         {{- toYaml . | nindent 8 }}

@@ -51,15 +51,40 @@ kubectl label node <node-name> memoryfs.io/node=true
 helm upgrade --install memoryfs "${CHART}" \
   --namespace memoryfs --create-namespace \
   --set replicaCount=3 \
+  --set replicaFactor=2 \
   --set node.storageGB=32
 ```
 
-只需两个参数：
+只需三个参数：
 
 | 参数 | 含义 |
 |------|------|
-| `replicaCount` | 集群节点数（已打标签的 K8s 节点数须 ≥ 此值） |
+| `replicaCount` | 集群节点数（已打标签的 K8s 节点数须 ≥ 此值；**每节点最多 1 个 Pod，模板强制**） |
+| `replicaFactor` | 数据副本数（chunk 跨节点复制份数，须 ≤ `replicaCount`） |
 | `node.storageGB` | 每节点最大 chunk 存储（GB）；Pod 内存自动为 storageGB+1Gi |
+
+### 挂载
+
+**节点 hostPath**（`mount.enabled=true`，默认目录 `/var/lib/memoryfs`）：
+
+```bash
+helm upgrade memoryfs "${CHART}" -n memoryfs \
+  --set replicaCount=3 \
+  --set replicaFactor=2 \
+  --set node.storageGB=32 \
+  --set mount.enabled=true
+```
+
+**本机 / 业务 Pod FUSE**（`privileged` + `/dev/fuse`）：
+
+```bash
+kubectl -n memoryfs port-forward svc/memoryfs 8080:8080
+
+docker run -it --rm --privileged \
+  -v /mnt/memoryfs:/mnt/memoryfs --network host \
+  shaowenchen/memoryfs:latest \
+  mount -mount /mnt/memoryfs -nodes http://127.0.0.1:8080 -replica-factor 2 -f
+```
 
 扩容：为新节点打标签 `memoryfs.io/node=true`，再 `helm upgrade` 增大 `replicaCount`（可同时改 `node.storageGB`）。
 
@@ -68,6 +93,7 @@ kubectl label node node-4 node-5 memoryfs.io/node=true
 
 helm upgrade memoryfs "${CHART}" -n memoryfs \
   --set replicaCount=5 \
+  --set replicaFactor=2 \
   --set node.storageGB=32
 ```
 
@@ -91,15 +117,6 @@ helm upgrade --install memoryfs ./deploy/helm/memoryfs \
 
 Helm 全部可配置项见下文 **[Helm 参数参考](#helm-参数参考)**。
 
-启用 FUSE DaemonSet（每节点挂载）：
-
-```bash
-helm upgrade memoryfs "${CHART}" \
-  --namespace memoryfs \
-  --set mount.enabled=true \
-  --set mount.hostPath=/var/lib/memoryfs
-```
-
 ---
 
 ## 扩缩容
@@ -111,6 +128,7 @@ kubectl label node node-4 node-5 memoryfs.io/node=true
 
 helm upgrade memoryfs "${CHART}" -n memoryfs \
   --set replicaCount=5 \
+  --set replicaFactor=2 \
   --set node.storageGB=32
 
 kubectl -n memoryfs rollout status sts/memoryfs
@@ -127,6 +145,7 @@ kubectl -n memoryfs rollout status sts/memoryfs
 # 2. 降低 replicaCount
 helm upgrade memoryfs "${CHART}" -n memoryfs \
   --set replicaCount=3 \
+  --set replicaFactor=2 \
   --set node.storageGB=32
 
 # 3. 确认 hostPath 数据目录可保留或已备份后再缩容
@@ -234,15 +253,14 @@ kubectl -n memoryfs exec memoryfs-0 -- tar -czf - /data > backup-node0.tar.gz
 
 ## Helm 参数参考
 
-**安装时通常只需 `replicaCount` 与 `node.storageGB`。** 其余为高级/默认值。
+**安装时通常只需 `replicaCount`、`replicaFactor` 与 `node.storageGB`。** 其余为高级/默认值。
 
 | 参数 | 默认 | 说明 |
 |------|------|------|
 | **`replicaCount`** | `3` | **集群节点数** |
+| **`replicaFactor`** | `2` | **数据副本数**（chunk 跨节点复制份数） |
 | **`node.storageGB`** | `3` | **每节点最大存储（GB）**；Pod 内存自动为 storageGB+1Gi |
-| `replicaFactor` | `2` | Chunk 跨节点副本数 |
 | `nodeSelector` | `memoryfs.io/node: "true"` | 仅调度到已打标签的节点 |
-| `spreadAcrossNodes` | `true` | 强制每节点最多 1 个 Pod（需足够多已标签节点） |
 | `image.repository` | `shaowenchen/memoryfs` | 镜像仓库 |
 | `image.tag` | `latest` | 镜像标签 |
 | `imagePullPolicy` | `Always`（模板固定） | 每次 Pod 创建/重启拉取最新镜像 |
@@ -266,6 +284,7 @@ kubectl -n memoryfs exec memoryfs-0 -- tar -czf - /data > backup-node0.tar.gz
 ```bash
 helm upgrade memoryfs "${CHART}" -n memoryfs \
   --set replicaCount=3 \
+  --set replicaFactor=2 \
   --set node.storageGB=100
 ```
 
@@ -349,7 +368,7 @@ helm upgrade --install memoryfs "${CHART}" -n memoryfs --create-namespace
 
 | 现象 | 处理 |
 |------|------|
-| Pod 一直 Pending | 节点是否已打 `memoryfs.io/node=true`；已标签节点数是否 ≥ `replicaCount` |
+| Pod 一直 Pending | 节点是否已打 `memoryfs.io/node=true`；已标签节点数是否 ≥ `replicaCount`（每节点最多 1 个 Pod，硬约束） |
 | `PostStartHookError`（1/2） | 旧 Chart postStart 在 HTTP 未就绪时执行；升级最新 Chart（已关闭 postStart，启动时自动 ready） |
 | Pod `ContainerCreating` 卡住 | `kubectl describe pod memoryfs-0` 看 Events；节点 `mkdir -p /data/memoryfs` |
 | `ImagePullBackOff` | 确认 `latest` 镜像可拉 |
