@@ -25,14 +25,6 @@ helm upgrade --install memoryfs "${CHART}" \
   --set node.persistence.size=100Gi
 ```
 
-验证：
-
-```bash
-kubectl -n memoryfs get pod
-kubectl -n memoryfs port-forward svc/memoryfs 8080:8080
-# http://127.0.0.1:8080/memoryfs/dashboard
-```
-
 ## 卸载
 
 ```bash
