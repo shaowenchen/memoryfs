@@ -41,9 +41,10 @@ spec:
             - sh
             - -c
             - |
-              ORD="${HOSTNAME##*-}"
+              ORD="$(hostname)"
+              ORD="${ORD##*-}"
               if [ "$ORD" = "0" ]; then exit 0; fi
-              BOOT0="http://{{ include "memoryfs.fullname" . }}-0.{{ include "memoryfs.headless" . }}:{{ .Values.service.httpPort }}"
+              BOOT0="http://{{ include "memoryfs.fullname" . }}-0.{{ include "memoryfs.headless" . }}.{{ .Release.Namespace }}.svc:{{ .Values.service.httpPort }}"
               echo "waiting for ${BOOT0}/health ..."
               until curl -sf "${BOOT0}/health" >/dev/null; do sleep 2; done
               echo "memoryfs-0 is ready"
