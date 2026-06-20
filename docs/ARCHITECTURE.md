@@ -1,0 +1,97 @@
+# 架构与设计
+
+## 概览
+
+MemoryFS 是分布式文件系统：元数据通过 **Raft** 强一致复制，文件内容切成 **4 MiB Chunk** 多副本存储在各节点本地磁盘。
+
+```
+FUSE/mount ──HTTP/gRPC──► Node 集群
+                            ├── KV + Raft (元数据)
+                            ├── Chunk × RF (多副本，disk/tiered/buffered)
+                            └── Lifecycle / GC / TTL / Repair
+```
+
+每个 Node 同时暴露 HTTP、gRPC、RDMA（实验性）三种接口，Chunk 传输按 **RDMA → gRPC → HTTP** 自动降级。
+
+## 接口
+
+| 接口 | 默认端口 | 用途 |
+|------|----------|------|
+| HTTP | 8080 | REST API、FUSE 客户端、Dashboard |
+| gRPC | 9090 | 元数据 RPC、Chunk 流式传输 |
+| RDMA | 9092 | 实验性，默认构建降级为 gRPC |
+
+Helm 部署时 HTTP API 与 Dashboard 默认路径前缀为 `/memoryfs`（如 `/memoryfs/dashboard`）。集群探针使用无前缀的 `/health`、`/metrics`。
+
+## 元数据
+
+- 每个节点内置 KV，写操作经 Raft 复制到多数派
+- Log/Stable 持久化到 `{data}/{id}/raft.db`
+- inode、目录项、chunk 索引、节点注册、集群 epoch 均存于 KV
+
+## Chunk 存储
+
+| 后端 | 说明 |
+|------|------|
+| `disk` | 写入即落盘 |
+| `tiered` | 落盘 + 内存读缓存（默认 512MB） |
+| `buffered` | 先写内存，定时 flush 落盘 |
+| `memory` | 纯内存，重启丢失 |
+
+- 默认 **RF=2**，副本位置记录在 `memoryfs:chunkloc:{id}`
+- `-flush-interval` 定时 fsync；`drain`/shutdown 前再次落盘
+- 节点重启从本地磁盘恢复，缺失时从 peer **rebuild**
+
+```
+写 chunk "2_0" (RF=3)
+  ├─► Node1: /data/chunks/2/2_0
+  ├─► Node2: /data/chunks/2/2_0
+  └─► Node3: /data/chunks/2/2_0
+```
+
+## 节点生命周期
+
+```
+active ──► draining ──► drained ──► (停止) ──► ready ──► active
+```
+
+| 阶段 | 行为 |
+|------|------|
+| active | 正常读写 |
+| draining | 拒绝新 chunk；落盘并确保 RF 副本 |
+| drained | 可安全停止 |
+| ready | 新节点就绪，从 peer rebuild |
+
+K8s 滚动更新：StatefulSet + preStop drain + postStart ready + PDB。详见 [deploy/README.md](../deploy/README.md)。
+
+## 集群 Epoch
+
+节点 join/leave 时 epoch +1。客户端可通过 `/health` 感知拓扑变化。
+
+## 协议示例
+
+### HTTP
+
+```bash
+curl http://127.0.0.1:8080/health
+curl http://127.0.0.1:8080/memoryfs/v1/cluster/overview
+curl -X PUT http://127.0.0.1:8080/memoryfs/chunks/2_0 --data-binary @file.bin
+```
+
+### gRPC
+
+```bash
+grpcurl -plaintext 127.0.0.1:9090 memoryfs.v1.MemoryFS/Health
+```
+
+### RDMA
+
+默认构建下降级为 gRPC。Linux 可用 `-tags rdma` 编译优化传输：
+
+```bash
+go build -tags rdma -o bin/node ./cmd/node
+```
+
+## 传输优先级
+
+写/读 Chunk 时依次尝试 RDMA → gRPC → HTTP，失败自动 fallback。

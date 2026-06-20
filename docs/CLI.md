@@ -1,0 +1,89 @@
+# 命令行与运维
+
+单一镜像 `shaowenchen/memoryfs` 包含 `node`、`mount`、`status`、`benchmark`。
+
+```bash
+memoryfs node [flags]       # 存储节点
+memoryfs node-env           # 从 MEMORYFS_* 环境变量启动（K8s）
+memoryfs mount [flags]      # FUSE 客户端
+memoryfs status [flags]     # 集群状态
+memoryfs benchmark [flags]  # 性能测试
+```
+
+## node 参数
+
+| 参数 | 默认 | 说明 |
+|------|------|------|
+| `-id` | n1 | 节点 ID |
+| `-http` / `-grpc` / `-raft` / `-rdma` | :8080 等 | 监听地址 |
+| `-advertise-http` / `-advertise-raft` | | 集群内宣告地址 |
+| `-data` | ./data | Raft/元数据目录 |
+| `-chunk-dir` | `{data}/{id}/chunks` | Chunk 落盘目录 |
+| `-chunk-backend` | disk | disk / tiered / buffered / memory |
+| `-replica-factor` | 2 | 跨节点副本数 |
+| `-mem-cache-mb` | 0 | tiered 内存缓存 MB |
+| `-disk-quota-gb` | 0 | 磁盘配额 |
+| `-gc-interval` | 5m | 孤儿 chunk GC（0=关） |
+| `-flush-interval` | 30s | 定时落盘/fsync |
+| `-default-ttl` / `-max-file-age` | 0 | 文件过期 |
+| `-uri-prefix` | 空 | HTTP 路径前缀（Helm 默认 `/memoryfs`） |
+| `-api-token` | | 写操作 Bearer Token |
+| `-bootstrap` | | 初始化 Raft 集群 |
+| `-standalone` | | 单节点 |
+| `-join` | | 加入集群（Leader HTTP URL） |
+
+## mount 参数
+
+| 参数 | 说明 |
+|------|------|
+| `-mount` | 挂载点（必填） |
+| `-nodes` | 节点 HTTP 列表，逗号分隔（必填） |
+| `-replica-factor` | 与集群 RF 一致 |
+| `-f` | 前台运行 |
+
+## status / benchmark
+
+```bash
+memoryfs status -nodes http://127.0.0.1:8080
+memoryfs status -nodes http://127.0.0.1:8080 -json
+
+memoryfs benchmark -nodes http://127.0.0.1:8080 \
+  -writes 50 -reads 50 -workers 4 -size 4194304
+```
+
+未指定 `-uri-prefix` 时自动探测 `/memoryfs`。环境变量：`MEMORYFS_NODES`、`MEMORYFS_URI_PREFIX`、`MEMORYFS_API_TOKEN`。
+
+## Docker
+
+```bash
+# Node 单节点
+docker run -d -p 8080:8080 -v data:/data shaowenchen/memoryfs:latest \
+  node -standalone -id n1 -http :8080 -data /data
+
+# 状态 / 压测
+docker run --rm shaowenchen/memoryfs:latest \
+  status -nodes http://host:8080
+
+# FUSE（需 privileged）
+docker run -it --rm --privileged --device /dev/fuse --cap-add SYS_ADMIN \
+  -v /tmp/memoryfs:/mnt/memoryfs shaowenchen/memoryfs:latest \
+  mount -mount /mnt/memoryfs -nodes http://node:8080 -f
+```
+
+## 运维面板
+
+Helm 默认经 Service 访问：
+
+```
+http://<svc>:8080/memoryfs/dashboard
+```
+
+Prometheus：`GET /metrics`（无前缀）
+
+## 构建
+
+```bash
+make proto build test docker-build
+```
+
+CI：push 到 master 触发测试与多架构镜像构建（amd64/arm64），推送 `shaowenchen/memoryfs:latest`。
