@@ -22,7 +22,7 @@ spec:
       containers:
         - name: mount
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
-          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          imagePullPolicy: Always
           securityContext:
             privileged: true
             capabilities:

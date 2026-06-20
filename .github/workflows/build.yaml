@@ -111,11 +111,11 @@ jobs:
             --version 0.0.0 \
             --app-version latest \
             --destination dist
+          mv dist/memoryfs-0.0.0.tgz dist/memoryfs-latest.tar.gz
           if gh release view latest >/dev/null 2>&1; then
-            gh release upload latest dist/*.tgz --clobber
-          else
-            gh release create latest dist/*.tgz \
-              --title latest \
-              --notes "MemoryFS Helm chart (latest)" \
-              --target "${{ github.sha }}"
+            gh release delete latest --yes --cleanup-tag
           fi
+          gh release create latest dist/memoryfs-latest.tar.gz \
+            --title latest \
+            --notes "MemoryFS Helm chart (latest)" \
+            --target "${{ github.sha }}"

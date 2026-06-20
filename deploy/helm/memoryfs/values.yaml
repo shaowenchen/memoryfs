@@ -5,7 +5,7 @@ replicaCount: 3
 image:
   repository: shaowenchen/memoryfs
   tag: latest
-  pullPolicy: Always
+  # imagePullPolicy is fixed to Always in templates (see statefulset.yaml).
 
 nameOverride: ""
 fullnameOverride: ""

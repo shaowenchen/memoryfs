@@ -1,5 +1,5 @@
 IMG ?= shaowenchen/memoryfs:latest
-HELM_CHART = https://github.com/shaowenchen/memoryfs/releases/download/latest/memoryfs-0.0.0.tgz
+HELM_CHART = https://github.com/shaowenchen/memoryfs/releases/download/latest/memoryfs-latest.tar.gz
 
 .PHONY: proto build test tidy docker-build deploy-scripts help
 
@@ -8,7 +8,7 @@ help:
 	@echo "  deploy-status   - cluster status (requires port-forward or local node)"
 	@echo "  status          - cluster storage status"
 	@echo "  benchmark       - storage throughput test"
-	@echo "  helm-install        - install from Release chart (latest)"
+	@echo "  helm-install        - install from Release (memoryfs-latest.tar.gz)"
 	@echo "  helm-install-local  - install from ./deploy/helm/memoryfs"
 
 proto:

@@ -43,18 +43,32 @@
 
 ## 快速开始
 
+Chart 包地址（Release `latest`，每次 push 到 `master` 自动更新）：
+
 ```bash
-helm upgrade --install memoryfs ./deploy/helm/memoryfs \
+CHART=https://github.com/shaowenchen/memoryfs/releases/download/latest/memoryfs-latest.tar.gz
+```
+
+安装（镜像 `latest`，拉取策略固定 `Always`）：
+
+```bash
+helm upgrade --install memoryfs "${CHART}" \
   --namespace memoryfs --create-namespace
 ```
 
 国内集群（阿里云镜像）：
 
 ```bash
-helm upgrade --install memoryfs ./deploy/helm/memoryfs \
+helm upgrade --install memoryfs "${CHART}" \
   --namespace memoryfs --create-namespace \
   --set image.repository=registry.cn-beijing.aliyuncs.com/opshub/shaowenchen-memoryfs \
   --set image.tag=latest
+```
+
+后续 `helm upgrade` 请继续使用同一 `${CHART}`（或本地 Chart 路径），以便 values 与模板一致。拉取策略在 Chart 模板中固定为 `Always`；升级后删除 Pod 重建即可拉取最新镜像：
+
+```bash
+kubectl -n memoryfs delete pod -l component=node
 ```
 
 查看 Pod 并打开管理面板（经 Service port-forward）：
@@ -68,7 +82,7 @@ open http://127.0.0.1:8080/memoryfs/dashboard   # macOS；Linux 用 xdg-open
 
 集群内访问：`http://memoryfs.memoryfs.svc:8080/memoryfs/dashboard`
 
-本地开发可直接使用仓库内 Chart：
+从仓库本地 Chart 安装（开发、改 Chart 调试）：
 
 ```bash
 helm upgrade --install memoryfs ./deploy/helm/memoryfs \
@@ -80,7 +94,7 @@ Helm 全部可配置项见下文 **[Helm 参数参考](#helm-参数参考)**。
 启用 FUSE DaemonSet（每节点挂载）：
 
 ```bash
-helm upgrade memoryfs ./deploy/helm/memoryfs \
+helm upgrade memoryfs "${CHART}" \
   --namespace memoryfs \
   --set mount.enabled=true \
   --set mount.hostPath=/var/lib/memoryfs
@@ -96,7 +110,7 @@ helm upgrade memoryfs ./deploy/helm/memoryfs \
 
 ```bash
 # 1. 增加副本数
-helm upgrade memoryfs ./deploy/helm/memoryfs \
+helm upgrade memoryfs "${CHART}" \
   --namespace memoryfs \
   --set replicaCount=5
 
@@ -115,7 +129,7 @@ kubectl -n memoryfs rollout status sts/memoryfs
 ./deploy/scripts/scale-down.sh http://n4:8080 http://n1:8080
 
 # 2. K8s 再降低 replicaCount（从最高 ordinal 开始删）
-helm upgrade memoryfs ./deploy/helm/memoryfs --namespace memoryfs --set replicaCount=3
+helm upgrade memoryfs "${CHART}" --namespace memoryfs --set replicaCount=3
 
 # 3. 确认 hostPath 数据目录可保留或已备份后再缩容
 ```
@@ -228,7 +242,7 @@ kubectl -n memoryfs exec memoryfs-0 -- tar -czf - /data > backup-node0.tar.gz
 | `replicaFactor` | `2` | Chunk 跨节点副本数 |
 | `image.repository` | `shaowenchen/memoryfs` | 镜像仓库 |
 | `image.tag` | `latest` | 镜像标签 |
-| `image.pullPolicy` | `Always` | 镜像拉取策略 |
+| `imagePullPolicy` | `Always`（模板固定） | 每次 Pod 创建/重启拉取最新镜像 |
 | `node.chunkBackend` | `memory` | 空值时随 `diskSync` 自动选 `memory`/`buffered` |
 | `node.diskSync.enabled` | `false` | 定时落盘开关 |
 | `node.diskSync.interval` | `30s` | 落盘/fsync 间隔（开关开启时） |
@@ -251,7 +265,7 @@ kubectl -n memoryfs exec memoryfs-0 -- tar -czf - /data > backup-node0.tar.gz
 # 各节点预先创建根目录（Chart 也会 DirectoryOrCreate）
 sudo mkdir -p /data/memoryfs
 
-helm upgrade memoryfs ./deploy/helm/memoryfs -n memoryfs \
+helm upgrade memoryfs "${CHART}" -n memoryfs \
   --set node.diskSync.enabled=true \
   --set node.diskSync.interval=30s \
   --set node.storage.type=hostPath \
@@ -308,15 +322,16 @@ push 到 `master` 后，GitHub Actions 会自动：
 
 1. 运行测试
 2. 推送 `shaowenchen/memoryfs:latest` 镜像
-3. 打包 Helm Chart 并上传到 [GitHub Releases / latest](https://github.com/shaowenchen/memoryfs/releases/tag/latest)
+3. 若已有 Release `latest` 则先删除，再打包 Helm Chart 为 `memoryfs-latest.tar.gz` 并发布到 [GitHub Releases / latest](https://github.com/shaowenchen/memoryfs/releases/tag/latest)
 
-Release 包地址：
+安装与升级使用同一包（无需打 git 版本 tag）：
 
 ```bash
-https://github.com/shaowenchen/memoryfs/releases/download/latest/memoryfs-0.0.0.tgz
+CHART=https://github.com/shaowenchen/memoryfs/releases/download/latest/memoryfs-latest.tar.gz
+helm upgrade --install memoryfs "${CHART}" -n memoryfs --create-namespace
 ```
 
-无需打版本 tag；Chart 与镜像均使用 `latest` 描述。
+也可使用 Makefile：`make helm-install`（Release）或 `make helm-install-local`（本地 Chart）。
 
 ---
 
@@ -339,7 +354,7 @@ https://github.com/shaowenchen/memoryfs/releases/download/latest/memoryfs-0.0.0.
 |------|------|
 | `PostStartHookError`（1/2） | 旧 Chart postStart 在 HTTP 未就绪时执行；升级最新 Chart（已关闭 postStart，启动时自动 ready） |
 | Pod `ContainerCreating` 卡住 | `kubectl describe pod memoryfs-0` 看 Events；节点 `mkdir -p /data/memoryfs` |
-| `ImagePullBackOff` | 确认 `latest` 镜像可拉；国内用 ACR：`registry.cn-beijing.aliyuncs.com/opshub/shaowenchen-memoryfs:latest` |
+| `ImagePullBackOff` | 确认 `latest` 镜像可拉；国内用 ACR：`registry.cn-beijing.aliyuncs.com/opshub/shaowenchen-memoryfs:latest`；拉取策略为 `Always`，可 `kubectl delete pod` 重试 |
 | `CrashLoopBackOff`（1/2） | `kubectl logs memoryfs-1 --previous`；升级 Chart 后 follower 会等 0 的 `/health` 再启动 |
 | `meta store: not leader` | 确保 memoryfs-0 先 Ready；`helm upgrade` 拉取含修复的新镜像 |
 | 节点 `draining` 卡住 | 检查 peer 可达；必要时 `drain?force=true` |
