@@ -2,18 +2,11 @@ MemoryFS installed (namespace {{ .Release.Namespace }}).
 
 Label nodes (if not done): kubectl label node <name> memoryfs.io/node=true
 
+Logs:
+  kubectl -n {{ .Release.Namespace }} logs -l app.kubernetes.io/instance={{ .Release.Name }} -c node --prefix=true -f
+
 Pods:
   kubectl get pods -n {{ .Release.Namespace }} -l app.kubernetes.io/instance={{ .Release.Name }}
 
 Dashboard:
   http://{{ include "memoryfs.fullname" . }}:{{ .Values.service.httpPort }}{{ .Values.dashboard.uriPrefix }}/dashboard
-
-Port-forward:
-  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "memoryfs.fullname" . }} 8080:{{ .Values.service.httpPort }}
-{{- if .Values.mount.enabled }}
-
-Mount (hostPath): {{ .Values.mount.hostPath }}
-{{- else }}
-
-Mount: helm upgrade {{ .Release.Name }} "${CHART}" -n {{ .Release.Namespace }} --set mount.enabled=true
-{{- end }}
