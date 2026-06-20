@@ -5,20 +5,26 @@
 ## 安装
 
 ```bash
-VERSION=0.1.0
+VERSION=0.1.3
 CHART="https://github.com/shaowenchen/memoryfs/releases/download/v${VERSION}/memoryfs-${VERSION}.tgz"
 
 helm upgrade --install memoryfs "${CHART}" \
-  -n memoryfs --create-namespace \
-  --set image.tag="v${VERSION}"
+  -n memoryfs --create-namespace
 ```
 
-启用 **定时落盘**（按间隔将 Chunk sync 到节点本地磁盘，重启前也会落盘）：
+Chart 默认镜像标签为 `v${VERSION}`（与 Release 一致）。国内集群可改用阿里云镜像：
 
 ```bash
 helm upgrade --install memoryfs "${CHART}" \
   -n memoryfs --create-namespace \
-  --set image.tag="v${VERSION}" \
+  --set image.repository=registry.cn-beijing.aliyuncs.com/opshub/shaowenchen-memoryfs
+```
+
+启用 **定时落盘**：
+
+```bash
+helm upgrade --install memoryfs "${CHART}" \
+  -n memoryfs --create-namespace \
   --set node.diskSync.enabled=true
 ```
 

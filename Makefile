@@ -1,5 +1,5 @@
 IMG ?= shaowenchen/memoryfs:latest
-VERSION ?= 0.1.2
+VERSION ?= 0.1.3
 HELM_CHART = https://github.com/shaowenchen/memoryfs/releases/download/v$(VERSION)/memoryfs-$(VERSION).tgz
 
 .PHONY: proto build test tidy docker-build deploy-scripts help

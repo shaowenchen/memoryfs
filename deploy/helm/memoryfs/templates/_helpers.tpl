@@ -55,6 +55,10 @@ component: node
 {{- printf "%s-instance" (include "memoryfs.fullname" .) -}}
 {{- end }}
 
+{{- define "memoryfs.imageTag" -}}
+{{- .Values.image.tag | default .Chart.AppVersion -}}
+{{- end }}
+
 {{- define "memoryfs.chunkBackend" -}}
 {{- $backend := .Values.node.chunkBackend -}}
 {{- if $backend -}}
