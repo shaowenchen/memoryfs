@@ -304,22 +304,19 @@ helm upgrade memoryfs "${CHART}" -n memoryfs --set dashboard.uriPrefix=
 
 ## 发布 Helm Chart
 
-维护者推送版本 tag 后，GitHub Actions 会自动：
+push 到 `master` 后，GitHub Actions 会自动：
 
 1. 运行测试
-2. 打包 `memoryfs-{version}.tgz` 并上传到 [GitHub Releases](https://github.com/shaowenchen/memoryfs/releases)
-3. 推送 `shaowenchen/memoryfs:latest` 与阿里云 `.../shaowenchen-memoryfs:latest` 镜像
+2. 推送 `shaowenchen/memoryfs:latest` 镜像
+3. 打包 Helm Chart 并上传到 [GitHub Releases / latest](https://github.com/shaowenchen/memoryfs/releases/tag/latest)
+
+Release 包地址：
 
 ```bash
-git tag v0.1.3
-git push origin v0.1.3
+https://github.com/shaowenchen/memoryfs/releases/download/latest/memoryfs-0.0.0.tgz
 ```
 
-用户安装时使用 Release 链接：
-
-```bash
-https://github.com/shaowenchen/memoryfs/releases/download/v0.1.3/memoryfs-0.1.3.tgz
-```
+无需打版本 tag；Chart 与镜像均使用 `latest` 描述。
 
 ---
 

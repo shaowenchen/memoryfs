@@ -87,3 +87,35 @@ jobs:
             docker://registry.cn-beijing.aliyuncs.com/opshub/shaowenchen-${image} \
             --dest-authfile /auth.json --insecure-policy \
             --src-tls-verify=false --dest-tls-verify=false --retry-times 5 --all
+
+  helm-release:
+    name: Publish Helm chart (latest)
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.event_name == 'push'
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+
+      - name: Package and upload chart
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          helm lint deploy/helm/memoryfs
+          mkdir -p dist
+          helm package deploy/helm/memoryfs \
+            --version 0.0.0 \
+            --app-version latest \
+            --destination dist
+          if gh release view latest >/dev/null 2>&1; then
+            gh release upload latest dist/*.tgz --clobber
+          else
+            gh release create latest dist/*.tgz \
+              --title latest \
+              --notes "MemoryFS Helm chart (latest)" \
+              --target "${{ github.sha }}"
+          fi
