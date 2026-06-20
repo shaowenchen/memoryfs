@@ -49,27 +49,14 @@ Chart 包地址（Release `latest`，每次 push 到 `master` 自动更新）：
 CHART=https://github.com/shaowenchen/memoryfs/releases/download/latest/memoryfs-latest.tar.gz
 ```
 
-安装（镜像 `latest`，拉取策略固定 `Always`）：
+安装：
 
 ```bash
 helm upgrade --install memoryfs "${CHART}" \
   --namespace memoryfs --create-namespace
 ```
 
-国内集群（阿里云镜像）：
-
-```bash
-helm upgrade --install memoryfs "${CHART}" \
-  --namespace memoryfs --create-namespace \
-  --set image.repository=registry.cn-beijing.aliyuncs.com/opshub/shaowenchen-memoryfs \
-  --set image.tag=latest
-```
-
-后续 `helm upgrade` 请继续使用同一 `${CHART}`（或本地 Chart 路径），以便 values 与模板一致。拉取策略在 Chart 模板中固定为 `Always`；升级后删除 Pod 重建即可拉取最新镜像：
-
-```bash
-kubectl -n memoryfs delete pod -l component=node
-```
+后续 `helm upgrade` 请继续使用同一 `${CHART}`（或本地 Chart 路径）。
 
 查看 Pod 并打开管理面板（经 Service port-forward）：
 
@@ -354,7 +341,7 @@ helm upgrade --install memoryfs "${CHART}" -n memoryfs --create-namespace
 |------|------|
 | `PostStartHookError`（1/2） | 旧 Chart postStart 在 HTTP 未就绪时执行；升级最新 Chart（已关闭 postStart，启动时自动 ready） |
 | Pod `ContainerCreating` 卡住 | `kubectl describe pod memoryfs-0` 看 Events；节点 `mkdir -p /data/memoryfs` |
-| `ImagePullBackOff` | 确认 `latest` 镜像可拉；国内用 ACR：`registry.cn-beijing.aliyuncs.com/opshub/shaowenchen-memoryfs:latest`；拉取策略为 `Always`，可 `kubectl delete pod` 重试 |
+| `ImagePullBackOff` | 确认 `latest` 镜像可拉 |
 | `CrashLoopBackOff`（1/2） | `kubectl logs memoryfs-1 --previous`；升级 Chart 后 follower 会等 0 的 `/health` 再启动 |
 | `meta store: not leader` | 确保 memoryfs-0 先 Ready；`helm upgrade` 拉取含修复的新镜像 |
 | 节点 `draining` 卡住 | 检查 peer 可达；必要时 `drain?force=true` |
