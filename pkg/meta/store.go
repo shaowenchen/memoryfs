@@ -118,6 +118,11 @@ func (s *LocalStore) initRoot(ctx context.Context) error {
 	return nil
 }
 
+// IsNotLeaderErr reports raft write failures while this node is not leader.
+func IsNotLeaderErr(err error) bool {
+	return isNotLeaderErr(err)
+}
+
 func isNotLeaderErr(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "not leader")
 }

@@ -90,17 +90,18 @@ func main() {
 			log.Fatalf("join cluster: %v", err)
 		}
 	}
-	if *bootstrap && !*standalone {
-		waitForRaftLeader(rn, 30*time.Second)
-	}
 
 	metaStore, err := meta.NewLocalStore(rn.KV())
 	if err != nil {
 		log.Fatalf("meta store: %v", err)
 	}
-	if rn.IsLeader() || *standalone {
-		if err := metaStore.EnsureRoot(context.Background()); err != nil {
-			log.Fatalf("meta store root: %v", err)
+	if *standalone {
+		if err := ensureRootAsLeader(context.Background(), rn, metaStore, 30*time.Second); err != nil {
+			log.Fatalf("meta store: %v", err)
+		}
+	} else if *bootstrap {
+		if err := ensureRootAsLeader(context.Background(), rn, metaStore, 60*time.Second); err != nil {
+			log.Fatalf("meta store: %v", err)
 		}
 	}
 
@@ -237,15 +238,20 @@ func min(a, b int) int {
 	return b
 }
 
-func waitForRaftLeader(rn *raftnode.Node, timeout time.Duration) {
+func ensureRootAsLeader(ctx context.Context, rn *raftnode.Node, store *meta.LocalStore, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
 		if rn.IsLeader() {
-			return
+			if err := store.EnsureRoot(ctx); err != nil && !meta.IsNotLeaderErr(err) {
+				return err
+			}
+			if _, err := store.GetAttr(ctx, meta.RootIno()); err == nil {
+				return nil
+			}
 		}
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(200 * time.Millisecond)
 	}
-	log.Printf("warning: timed out waiting for raft leadership")
+	return fmt.Errorf("timed out waiting to initialize root inode as leader")
 }
 
 func joinCluster(leaderURL, id, raftAddr, httpAddr, grpcAddr, rdmaAddr string) error {
