@@ -58,31 +58,44 @@ func (s *Service) RunGC(ctx context.Context) (int, error) {
 
 // MaintenanceConfig configures background maintenance.
 type MaintenanceConfig struct {
-	GCInterval time.Duration
-	TTL        time.Duration
-	DefaultTTL time.Duration
+	GCInterval    time.Duration
+	FlushInterval time.Duration
+	TTL           time.Duration
+	DefaultTTL    time.Duration
 }
 
-// StartMaintenance runs periodic GC, TTL expiry, and replica repair sweeps.
+// StartMaintenance runs periodic GC, disk flush, TTL expiry, and replica repair sweeps.
 func (s *Service) StartMaintenance(ctx context.Context, cfg MaintenanceConfig) {
-	interval := cfg.GCInterval
-	if interval <= 0 {
-		interval = time.Minute
+	tick := 30 * time.Second
+	if cfg.FlushInterval > 0 && cfg.FlushInterval < tick {
+		tick = cfg.FlushInterval
+	}
+	if cfg.GCInterval > 0 && cfg.GCInterval < tick {
+		tick = cfg.GCInterval
 	}
 	go func() {
-		ticker := time.NewTicker(interval)
+		ticker := time.NewTicker(tick)
 		defer ticker.Stop()
+		var lastFlush, lastGC time.Time
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				if cfg.GCInterval > 0 {
+				now := time.Now()
+				if cfg.FlushInterval > 0 && (lastFlush.IsZero() || now.Sub(lastFlush) >= cfg.FlushInterval) {
+					if _, err := s.FlushChunksLogged(); err != nil {
+						log.Printf("flush: %v", err)
+					}
+					lastFlush = now
+				}
+				if cfg.GCInterval > 0 && (lastGC.IsZero() || now.Sub(lastGC) >= cfg.GCInterval) {
 					if n, err := s.RunGC(ctx); err != nil {
 						log.Printf("gc: %v", err)
 					} else if n > 0 {
-					 log.Printf("gc: removed %d orphan chunks", n)
+						log.Printf("gc: removed %d orphan chunks", n)
 					}
+					lastGC = now
 				}
 				if cfg.TTL > 0 && s.IsLeader() {
 					if n, err := s.ExpireFiles(ctx, cfg.TTL); err != nil {

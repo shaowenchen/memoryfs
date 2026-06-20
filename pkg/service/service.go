@@ -270,9 +270,12 @@ func (s *Service) Rebuild(ctx context.Context) (int, error) {
 		})
 }
 
-// Drain ensures all local chunks are replicated before shutdown.
+// Drain flushes local chunks to disk and ensures they are replicated before shutdown.
 func (s *Service) Drain(ctx context.Context, force bool) (remaining int, drained bool, err error) {
 	s.cfg.Lifecycle.StartDrain()
+	if _, err := s.FlushChunksLogged(); err != nil {
+		log.Printf("drain: flush warning: %v", err)
+	}
 	local := s.cfg.Chunks.List()
 	nodes, _ := s.cfg.Meta.ListNodes(ctx)
 

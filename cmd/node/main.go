@@ -44,6 +44,7 @@ func main() {
 	memCacheMB := flag.Int64("mem-cache-mb", 0, "in-memory read cache size in MB (0=disabled, tiered backend enables 512MB default)")
 	diskQuotaGB := flag.Int64("disk-quota-gb", 0, "local disk quota in GB (0=unlimited)")
 	gcInterval := flag.Duration("gc-interval", 5*time.Minute, "orphan chunk GC interval (0=disabled)")
+	flushInterval := flag.Duration("flush-interval", 30*time.Second, "local chunk flush/fsync interval (0=disabled except on shutdown)")
 	maxFileAge := flag.Duration("max-file-age", 0, "expire files older than this duration (0=disabled)")
 	defaultTTL := flag.Duration("default-ttl", 0, "TTL for newly created files (0=disabled)")
 	bootstrap := flag.Bool("bootstrap", false, "bootstrap a new raft cluster")
@@ -133,9 +134,10 @@ func main() {
 	svc.Ready(context.Background())
 
 	svc.StartMaintenance(maintCtx, service.MaintenanceConfig{
-		GCInterval: *gcInterval,
-		TTL:        *maxFileAge,
-		DefaultTTL: *defaultTTL,
+		GCInterval:    *gcInterval,
+		FlushInterval: *flushInterval,
+		TTL:           *maxFileAge,
+		DefaultTTL:    *defaultTTL,
 	})
 
 	httpSrv := node.NewServer(svc, *apiToken)

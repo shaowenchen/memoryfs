@@ -23,6 +23,7 @@ node:
   memCacheMB: 512
   diskQuotaGB: 100
   gcInterval: 5m
+  flushInterval: 30s
   defaultTTL: "0"
   maxFileAge: "0"
   dataDir: /data

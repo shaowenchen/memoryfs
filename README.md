@@ -146,9 +146,10 @@ go run ./cmd/mount -mount /tmp/memoryfs -nodes http://127.0.0.1:8080,http://127.
 ```
 
 滚动更新时：
-1. `drain` 确保本地 chunk 已在 RF 个节点上落盘
-2. 新 Pod 启动 → `ready` → 从 peer 拉取缺失 chunk 到本地磁盘
-3. 有 PVC 时磁盘数据直接保留，rebuild 更快
+1. 定时 `-flush-interval` 将 chunk 落盘/fsync 到本地磁盘（`buffered` 后端先写内存再批量落盘）
+2. `drain` 在停止前再次落盘，并确保本地 chunk 已在 RF 个节点上有副本
+3. 新 Pod 启动 → `ready` → 从 peer 拉取缺失 chunk 到本地磁盘
+4. 有 PVC 时磁盘数据直接保留，rebuild 更快
 
 #### 3. 节点生命周期
 
@@ -200,10 +201,11 @@ lifecycle:
 | `-raft` | :8081 | Raft 地址 |
 | `-replica-factor` | 2 | Chunk 跨节点副本数 |
 | `-chunk-dir` | `{data}/{id}/chunks` | 本地 chunk 落盘目录 |
-| `-chunk-backend` | disk | chunk 存储：`disk`、`tiered` 或 `memory` |
+| `-chunk-backend` | disk | chunk 存储：`disk`、`tiered`、`buffered` 或 `memory` |
 | `-mem-cache-mb` | 0 | 内存读缓存 MB（`tiered` 默认 512） |
 | `-disk-quota-gb` | 0 | 本地磁盘配额 GB（0=不限） |
 | `-gc-interval` | 5m | 孤儿 chunk GC 间隔（0=关闭） |
+| `-flush-interval` | 30s | 本地 chunk 定时落盘/fsync（0=仅 shutdown 时落盘） |
 | `-default-ttl` | 0 | 新建文件 TTL（0=关闭） |
 | `-max-file-age` | 0 | 按 mtime 过期清理（0=关闭） |
 | `-api-token` | | 可选 API Bearer Token（保护写操作） |

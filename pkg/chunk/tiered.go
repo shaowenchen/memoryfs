@@ -66,6 +66,11 @@ func (s *TieredStore) DiskUsage() (int64, error) {
 
 func (s *TieredStore) MemUsage() int64 { return s.usedBytes.Load() }
 
+// Flush fsyncs the persistent disk layer.
+func (s *TieredStore) Flush() (int, error) {
+	return FlushStore(s.persistent)
+}
+
 func (s *TieredStore) cache(id string, data []byte) {
 	size := int64(len(data))
 	if size > s.maxBytes {
@@ -115,6 +120,11 @@ func (q *QuotaDisk) Put(id string, data []byte) error {
 	return q.DiskStore.Put(id, data)
 }
 
+// Flush fsyncs the underlying disk store.
+func (q *QuotaDisk) Flush() (int, error) {
+	return q.DiskStore.Flush()
+}
+
 // UsageBytes returns total bytes used on disk.
 func (d *DiskStore) UsageBytes() (int64, error) {
 	d.mu.RLock()
@@ -162,6 +172,19 @@ func OpenStoreWithOptions(opt OpenStoreOptions) (Store, error) {
 	switch opt.Backend {
 	case "memory":
 		return NewMemoryStore(), nil
+	case "buffered":
+		if opt.Dir == "" {
+			return nil, fmt.Errorf("buffered backend requires chunk directory")
+		}
+		disk, err := NewDiskStore(opt.Dir)
+		if err != nil {
+			return nil, err
+		}
+		persistent := Store(disk)
+		if opt.DiskQuotaGB > 0 {
+			persistent = NewQuotaDisk(disk, opt.DiskQuotaGB<<30)
+		}
+		return NewWriteBackStore(persistent), nil
 	case "disk", "tiered", "":
 		if opt.Dir == "" {
 			return nil, fmt.Errorf("disk backend requires chunk directory")

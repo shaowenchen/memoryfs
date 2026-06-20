@@ -91,6 +91,39 @@ func (s *DiskStore) Count() int {
 	return len(s.List())
 }
 
+// Flush fsyncs all chunk files and the storage directory.
+func (s *DiskStore) Flush() (int, error) {
+	s.mu.RLock()
+	dir := s.dir
+	s.mu.RUnlock()
+
+	synced := 0
+	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+		if err != nil || info.IsDir() || strings.HasSuffix(path, ".tmp") {
+			return nil
+		}
+		f, err := os.Open(path)
+		if err != nil {
+			return err
+		}
+		if err := f.Sync(); err != nil {
+			_ = f.Close()
+			return err
+		}
+		_ = f.Close()
+		synced++
+		return nil
+	})
+	if err != nil {
+		return synced, err
+	}
+	if d, err := os.Open(dir); err == nil {
+		_ = d.Sync()
+		_ = d.Close()
+	}
+	return synced, nil
+}
+
 // Dir returns the chunk storage directory.
 func (s *DiskStore) Dir() string { return s.dir }
 
