@@ -25,19 +25,30 @@ helm upgrade --install memoryfs \
 
 ## 挂载
 
-默认挂载目录 **`/mnt/memoryfs`**。`-nodes` **填任意一个可达节点**即可（如 node3）；chunk 在其它节点时，该节点会向 peer 拉取后再返回。
+默认挂载目录 **`/mnt/memoryfs`**。`-nodes` **填任意一个可达节点**即可；chunk 在其它节点时，该节点会向 peer 拉取后再返回。
+
+```bash
+mkdir -p /mnt/memoryfs
+
+nerdctl pull docker.io/shaowenchen/memoryfs:latest
+```
 
 ```bash
 nerdctl run -it --rm --privileged \
-  -v /mnt/memoryfs:/mnt/memoryfs \
+  --device /dev/fuse \
+  -v /mnt/memoryfs:/mnt/memoryfs:shared \
   --network host \
-  shaowenchen/memoryfs:latest \
+  docker.io/shaowenchen/memoryfs:latest \
   mount -mount /mnt/memoryfs \
   -nodes http://10.0.0.3:8080 \
   -f
 ```
 
-也可逗号分隔多个 nodes 节点。
+- `--device /dev/fuse`：FUSE 必需
+- `:shared`：容器内挂载对宿主机 `/mnt/memoryfs` 可见
+- 也可逗号分隔多个 nodes 节点
+
+拉镜像若报 `text/html`，说明 registry 返回了错误页（网络/限流），先单独 `nerdctl pull docker.io/shaowenchen/memoryfs:latest` 排查；或在已能拉取该镜像的节点上 `nerdctl save` / `load`。
 
 ## 卸载
 
