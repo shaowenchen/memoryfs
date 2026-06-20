@@ -39,6 +39,27 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 component: node
 {{- end }}
 
+{{- define "memoryfs.spreadAffinity" -}}
+podAntiAffinity:
+  requiredDuringSchedulingIgnoredDuringExecution:
+    - labelSelector:
+        matchLabels:
+          {{- include "memoryfs.selectorLabels" . | nindent 10 }}
+      topologyKey: kubernetes.io/hostname
+{{- end }}
+
+{{- define "memoryfs.podMemory" -}}
+{{- printf "%dGi" (add (int .Values.node.storageGB) 1) -}}
+{{- end }}
+
+{{- define "memoryfs.diskQuotaGB" -}}
+{{- if .Values.node.diskSync.enabled -}}
+{{- .Values.node.storageGB -}}
+{{- else -}}
+0
+{{- end -}}
+{{- end }}
+
 {{- define "memoryfs.headless" -}}
 {{- printf "%s-headless" (include "memoryfs.fullname" .) }}
 {{- end }}

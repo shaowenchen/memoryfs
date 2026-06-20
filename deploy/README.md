@@ -43,20 +43,33 @@
 
 ## 快速开始
 
-Chart 包地址（Release `latest`，每次 push 到 `master` 自动更新）：
-
 ```bash
 CHART=https://github.com/shaowenchen/memoryfs/releases/download/latest/memoryfs-latest.tar.gz
+
+kubectl label node <node-name> memoryfs.io/node=true
+
+helm upgrade --install memoryfs "${CHART}" \
+  --namespace memoryfs --create-namespace \
+  --set replicaCount=3 \
+  --set node.storageGB=32
 ```
 
-安装：
+只需两个参数：
+
+| 参数 | 含义 |
+|------|------|
+| `replicaCount` | 集群节点数（已打标签的 K8s 节点数须 ≥ 此值） |
+| `node.storageGB` | 每节点最大 chunk 存储（GB）；Pod 内存自动为 storageGB+1Gi |
+
+扩容：为新节点打标签 `memoryfs.io/node=true`，再 `helm upgrade` 增大 `replicaCount`（可同时改 `node.storageGB`）。
 
 ```bash
-helm upgrade --install memoryfs "${CHART}" \
-  --namespace memoryfs --create-namespace
-```
+kubectl label node node-4 node-5 memoryfs.io/node=true
 
-后续 `helm upgrade` 请继续使用同一 `${CHART}`（或本地 Chart 路径）。
+helm upgrade memoryfs "${CHART}" -n memoryfs \
+  --set replicaCount=5 \
+  --set node.storageGB=32
+```
 
 查看 Pod 并打开管理面板（经 Service port-forward）：
 
@@ -93,18 +106,14 @@ helm upgrade memoryfs "${CHART}" \
 
 ### 扩容（Scale Up）
 
-**K8s：**
-
 ```bash
-# 1. 增加副本数
-helm upgrade memoryfs "${CHART}" \
-  --namespace memoryfs \
-  --set replicaCount=5
+kubectl label node node-4 node-5 memoryfs.io/node=true
 
-# 2. 新 Pod 自动 join + ready + rebuild
+helm upgrade memoryfs "${CHART}" -n memoryfs \
+  --set replicaCount=5 \
+  --set node.storageGB=32
+
 kubectl -n memoryfs rollout status sts/memoryfs
-
-# 3. 更新 FUSE mount 节点列表（若使用 DaemonSet，需更新 values 中 replicaCount 后 upgrade）
 ```
 
 ### 缩容（Scale Down）
@@ -115,8 +124,10 @@ kubectl -n memoryfs rollout status sts/memoryfs
 # 1. 对要下线的节点执行
 ./deploy/scripts/scale-down.sh http://n4:8080 http://n1:8080
 
-# 2. K8s 再降低 replicaCount（从最高 ordinal 开始删）
-helm upgrade memoryfs "${CHART}" --namespace memoryfs --set replicaCount=3
+# 2. 降低 replicaCount
+helm upgrade memoryfs "${CHART}" -n memoryfs \
+  --set replicaCount=3 \
+  --set node.storageGB=32
 
 # 3. 确认 hostPath 数据目录可保留或已备份后再缩容
 ```
@@ -223,10 +234,15 @@ kubectl -n memoryfs exec memoryfs-0 -- tar -czf - /data > backup-node0.tar.gz
 
 ## Helm 参数参考
 
+**安装时通常只需 `replicaCount` 与 `node.storageGB`。** 其余为高级/默认值。
+
 | 参数 | 默认 | 说明 |
 |------|------|------|
-| `replicaCount` | `3` | StatefulSet 节点数 |
+| **`replicaCount`** | `3` | **集群节点数** |
+| **`node.storageGB`** | `3` | **每节点最大存储（GB）**；Pod 内存自动为 storageGB+1Gi |
 | `replicaFactor` | `2` | Chunk 跨节点副本数 |
+| `nodeSelector` | `memoryfs.io/node: "true"` | 仅调度到已打标签的节点 |
+| `spreadAcrossNodes` | `true` | 强制每节点最多 1 个 Pod（需足够多已标签节点） |
 | `image.repository` | `shaowenchen/memoryfs` | 镜像仓库 |
 | `image.tag` | `latest` | 镜像标签 |
 | `imagePullPolicy` | `Always`（模板固定） | 每次 Pod 创建/重启拉取最新镜像 |
@@ -237,7 +253,6 @@ kubectl -n memoryfs exec memoryfs-0 -- tar -czf - /data > backup-node0.tar.gz
 | `node.storage.hostPath` | `/data/memoryfs` | 节点本地盘根目录 |
 | `node.storage.instanceId` | 随机 8 位 `[a-z0-9]` | 首次安装自动生成并写入 Secret；升级不变 |
 | `node.gcInterval` | `5m` | 孤儿 chunk GC 间隔 |
-| `node.diskQuotaGB` | `0` | 本地磁盘配额（落盘开启时可设限） |
 | `node.lifecycle.postStartReady` | `false` | 已关闭（节点进程启动时自动 ready；postStart 易与等待 0 号冲突） |
 | `node.lifecycle.preStopDrain` | `true` | 缩容/重启前 drain |
 | `node.podManagementPolicy` | `OrderedReady` | 按序启动：pod-0 Ready 后再起 pod-1、pod-2 |
@@ -246,17 +261,12 @@ kubectl -n memoryfs exec memoryfs-0 -- tar -czf - /data > backup-node0.tar.gz
 | `metrics.enabled` | `false` | 启用 ServiceMonitor |
 | `mount.enabled` | `false` | 部署 FUSE DaemonSet（同镜像） |
 
-示例：启用定时落盘 + 本地 hostPath（生产）
+示例：
 
 ```bash
-# 各节点预先创建根目录（Chart 也会 DirectoryOrCreate）
-sudo mkdir -p /data/memoryfs
-
 helm upgrade memoryfs "${CHART}" -n memoryfs \
-  --set node.diskSync.enabled=true \
-  --set node.diskSync.interval=30s \
-  --set node.storage.type=hostPath \
-  --set node.diskQuotaGB=100
+  --set replicaCount=3 \
+  --set node.storageGB=100
 ```
 
 数据落在节点 `/data/memoryfs/{实例ID}/memoryfs-0` 等路径下（ID 为 8 位小写字母+数字，首次安装随机生成，存于 Secret `{release}-instance`）。
@@ -339,6 +349,7 @@ helm upgrade --install memoryfs "${CHART}" -n memoryfs --create-namespace
 
 | 现象 | 处理 |
 |------|------|
+| Pod 一直 Pending | 节点是否已打 `memoryfs.io/node=true`；已标签节点数是否 ≥ `replicaCount` |
 | `PostStartHookError`（1/2） | 旧 Chart postStart 在 HTTP 未就绪时执行；升级最新 Chart（已关闭 postStart，启动时自动 ready） |
 | Pod `ContainerCreating` 卡住 | `kubectl describe pod memoryfs-0` 看 Events；节点 `mkdir -p /data/memoryfs` |
 | `ImagePullBackOff` | 确认 `latest` 镜像可拉 |

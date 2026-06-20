@@ -24,9 +24,12 @@ spec:
       nodeSelector:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with .Values.affinity }}
+      {{- if .Values.affinity }}
       affinity:
-        {{- toYaml . | nindent 8 }}
+        {{- toYaml .Values.affinity | nindent 8 }}
+      {{- else if .Values.spreadAcrossNodes }}
+      affinity:
+        {{- include "memoryfs.spreadAffinity" . | nindent 8 }}
       {{- end }}
       {{- with .Values.tolerations }}
       tolerations:
@@ -89,9 +92,9 @@ spec:
             - name: MEMORYFS_REPLICA_FACTOR
               value: {{ .Values.replicaFactor | quote }}
             - name: MEMORYFS_MEM_CACHE_MB
-              value: {{ .Values.node.memCacheMB | quote }}
+              value: "0"
             - name: MEMORYFS_DISK_QUOTA_GB
-              value: {{ .Values.node.diskQuotaGB | quote }}
+              value: {{ include "memoryfs.diskQuotaGB" . | quote }}
             - name: MEMORYFS_GC_INTERVAL
               value: {{ .Values.node.gcInterval | quote }}
             - name: MEMORYFS_FLUSH_INTERVAL
@@ -129,7 +132,12 @@ spec:
             initialDelaySeconds: 20
             periodSeconds: 20
           resources:
-            {{- toYaml .Values.node.resources | nindent 12 }}
+            requests:
+              cpu: {{ .Values.node.resources.requests.cpu }}
+              memory: {{ include "memoryfs.podMemory" . }}
+            limits:
+              cpu: {{ .Values.node.resources.limits.cpu }}
+              memory: {{ include "memoryfs.podMemory" . }}
           {{- if .Values.node.lifecycle.preStopDrain }}
           lifecycle:
             preStop:

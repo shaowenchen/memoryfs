@@ -1,4 +1,5 @@
 # Default values for MemoryFS Helm chart.
+# User-facing knobs: replicaCount (nodes), node.storageGB (data per pod, GB).
 
 replicaCount: 3
 
@@ -20,8 +21,8 @@ replicaFactor: 2
 node:
   # Empty = auto from diskSync: memory (off) / buffered (on)
   chunkBackend: ""
-  memCacheMB: 512
-  diskQuotaGB: 0
+  # Max chunk data per pod (GB). Pod memory request/limit = storageGB + 1Gi.
+  storageGB: 3
   gcInterval: 5m
   # Periodic chunk flush/fsync to node.dataDir (emptyDir or hostPath).
   diskSync:
@@ -35,10 +36,8 @@ node:
   resources:
     requests:
       cpu: 500m
-      memory: 1Gi
     limits:
       cpu: "2"
-      memory: 4Gi
 
   # emptyDir = ephemeral; hostPath = /data/memoryfs/{instanceId}/{podName} on the node
   storage:
@@ -81,6 +80,11 @@ service:
   grpcPort: 9090
   raftPort: 8081
 
-nodeSelector: {}
+nodeSelector:
+  memoryfs.io/node: "true"
+
+# One StatefulSet pod per node (requires >= replicaCount labeled nodes).
+spreadAcrossNodes: true
+
 tolerations: []
 affinity: {}

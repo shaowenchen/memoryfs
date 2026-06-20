@@ -1,36 +1,16 @@
-1. Get cluster status:
-   kubectl get pods -l app.kubernetes.io/instance={{ .Release.Name }}
+MemoryFS installed (namespace {{ .Release.Namespace }}).
 
-2. Node HTTP endpoints (headless DNS):
-{{- $fullname := include "memoryfs.fullname" . -}}
-{{- $headless := include "memoryfs.headless" . -}}
-{{- $port := .Values.service.httpPort -}}
-{{- range $i, $e := until (int .Values.replicaCount) }}
-   http://{{ $fullname }}-{{ $i }}.{{ $headless }}:{{ $port }}
-{{- end }}
+Label nodes (if not done): kubectl label node <name> memoryfs.io/node=true
 
-3. Cluster service:
-   http://{{ include "memoryfs.fullname" . }}:{{ .Values.service.httpPort }}
+Pods:
+  kubectl get pods -n {{ .Release.Namespace }} -l app.kubernetes.io/instance={{ .Release.Name }}
 
-4. Web dashboard (via Service / port-forward):
-   http://{{ include "memoryfs.fullname" . }}:{{ .Values.service.httpPort }}{{ .Values.dashboard.uriPrefix }}/dashboard
+Dashboard:
+  http://{{ include "memoryfs.fullname" . }}:{{ .Values.service.httpPort }}{{ .Values.dashboard.uriPrefix }}/dashboard
 
-5. Ops scripts (from repo deploy/scripts):
-   ./deploy/scripts/cluster-status.sh http://{{ include "memoryfs.fullname" . }}:{{ .Values.service.httpPort }}
-
-6. Scale up (increase replicaCount, then helm upgrade):
-   helm upgrade {{ .Release.Name }} \
-     https://github.com/shaowenchen/memoryfs/releases/download/latest/memoryfs-latest.tar.gz \
-     --namespace {{ .Release.Namespace }} \
-     --set replicaCount=5
-
-7. Scale down (drain node first):
-   ./deploy/scripts/scale-down.sh http://{{ include "memoryfs.fullname" . }}-N.{{ include "memoryfs.headless" . }}:{{ .Values.service.httpPort }}
-
-8. Backup node PVC:
-   kubectl exec {{ include "memoryfs.fullname" . }}-0 -- tar -czf - /data > backup.tar.gz
-
+Port-forward:
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "memoryfs.fullname" . }} 8080:{{ .Values.service.httpPort }}
 {{- if .Values.mount.enabled }}
 
-9. FUSE mount available on nodes at: {{ .Values.mount.hostPath }}
+FUSE mount: {{ .Values.mount.hostPath }}
 {{- end }}

@@ -49,11 +49,15 @@ benchmark:
 
 helm-install:
 	helm upgrade --install memoryfs $(HELM_CHART) \
-		--namespace memoryfs --create-namespace
+		--namespace memoryfs --create-namespace \
+		--set replicaCount=3 \
+		--set node.storageGB=32
 
 helm-install-local:
 	helm upgrade --install memoryfs ./deploy/helm/memoryfs \
-		--namespace memoryfs --create-namespace
+		--namespace memoryfs --create-namespace \
+		--set replicaCount=3 \
+		--set node.storageGB=32
 
 helm-template:
 	helm template memoryfs ./deploy/helm/memoryfs
