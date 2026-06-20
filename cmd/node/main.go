@@ -99,8 +99,6 @@ func main() {
 		if err := ensureRootAsLeader(context.Background(), rn, metaStore, 30*time.Second); err != nil {
 			log.Fatalf("meta store: %v", err)
 		}
-	} else if *bootstrap {
-		go waitForRootAsLeader(rn, metaStore)
 	}
 
 	chunkStore, err := chunk.OpenStoreWithOptions(chunk.OpenStoreOptions{
@@ -136,13 +134,10 @@ func main() {
 	})
 	svc.LoadClusterConfig()
 
-	if rn.IsLeader() || *standalone {
-		if err := rn.RegisterSelf(); err != nil {
-			log.Printf("warning: register self: %v", err)
-		}
-		if err := svc.PersistReplicaFactor(); err != nil {
-			log.Printf("warning: persist replica factor: %v", err)
-		}
+	if !*standalone {
+		go runLeaderDuties(rn, svc, metaStore)
+	} else if err := rn.RegisterSelf(); err != nil {
+		log.Printf("warning: register self: %v", err)
 	}
 
 	svc.Ready(context.Background())
@@ -252,12 +247,26 @@ func ensureRootAsLeader(ctx context.Context, rn *raftnode.Node, store *meta.Loca
 	return fmt.Errorf("timed out waiting to initialize root inode as leader")
 }
 
-func waitForRootAsLeader(rn *raftnode.Node, store *meta.LocalStore) {
-	if err := ensureRootAsLeader(context.Background(), rn, store, 10*time.Minute); err != nil {
-		log.Printf("warning: bootstrap root init: %v", err)
-		return
+func runLeaderDuties(rn *raftnode.Node, svc *service.Service, store *meta.LocalStore) {
+	var wasLeader bool
+	for {
+		leader := rn.IsLeader()
+		if leader && !wasLeader {
+			if err := rn.RegisterSelf(); err != nil {
+				log.Printf("warning: register self: %v", err)
+			}
+			if err := svc.PersistReplicaFactor(); err != nil {
+				log.Printf("warning: persist replica factor: %v", err)
+			}
+			if err := ensureRootAsLeader(context.Background(), rn, store, 2*time.Minute); err != nil {
+				log.Printf("warning: leader root init: %v", err)
+			} else {
+				log.Printf("leader ready: registered and root inode initialized")
+			}
+		}
+		wasLeader = leader
+		time.Sleep(500 * time.Millisecond)
 	}
-	log.Printf("bootstrap root inode ready")
 }
 
 func joinCluster(leaderURL, id, raftAddr, httpAddr, grpcAddr, rdmaAddr, uriPrefix string) error {
