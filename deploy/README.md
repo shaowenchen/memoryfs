@@ -295,6 +295,8 @@ helm upgrade memoryfs "${CHART}" -n memoryfs --set dashboard.uriPrefix=
 | `MEMORYFS_JOIN` | Leader HTTP URL |
 | `MEMORYFS_HTTP_URL` | 对外宣告的 HTTP 地址 |
 | `MEMORYFS_RAFT_URL` | 对外宣告的 Raft 地址 |
+| `MEMORYFS_INSTANCE_ID` | 部署实例 ID（Secret 注入，hostPath 模式） |
+| `MEMORYFS_STORAGE_ROOT` | hostPath 根目录（如 `/data/memoryfs`），与 instance ID、Pod 名组合数据路径 |
 | `MEMORYFS_REPLICA_FACTOR` | Chunk 副本数 |
 | `MEMORYFS_CHUNK_BACKEND` | disk / tiered / buffered / memory |
 | `MEMORYFS_URI_PREFIX` | HTTP 路径前缀（如 `/memoryfs`） |
@@ -342,7 +344,7 @@ https://github.com/shaowenchen/memoryfs/releases/download/v0.1.0/memoryfs-0.1.0.
 
 | 现象 | 处理 |
 |------|------|
-| Pod `ContainerCreating` 卡住 | 看 Events：`FailedMount` 多为 hostPath 子目录不存在（升级含 initContainer 的 Chart）；节点执行 `mkdir -p /data/memoryfs` |
+| Pod `ContainerCreating` 卡住 | 看 Events：`FailedMount` 检查节点 `/data/memoryfs` 是否存在；升级最新 Chart 后由启动脚本自动 mkdir |
 | `ImagePullBackOff` | 确认镜像存在：优先 `--set image.tag=latest`；国内可用 ACR 镜像 |
 | `CrashLoopBackOff`（1/2） | 先看 `kubectl logs memoryfs-1`；常见为旧镜像 `meta store: not leader`，需拉最新镜像；或 0 未 Ready 时 join 失败（会重试，不应致命） |
 | `meta store: not leader` | 确保 memoryfs-0 先 Ready；`helm upgrade` 拉取含修复的新镜像 |
