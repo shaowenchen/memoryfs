@@ -56,8 +56,13 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.namespace
+            {{- if eq .Values.node.storage.type "hostPath" }}
             - name: MEMORYFS_INSTANCE_ID
-              value: {{ include "memoryfs.instanceId" . | quote }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "memoryfs.instanceSecretName" . }}
+                  key: id
+            {{- end }}
             - name: MEMORYFS_DATA
               value: {{ .Values.node.dataDir | quote }}
             - name: MEMORYFS_CHUNK_DIR

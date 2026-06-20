@@ -51,8 +51,8 @@ component: node
 {{- end }}
 {{- end }}
 
-{{- define "memoryfs.instanceId" -}}
-{{- default .Release.Name .Values.node.storage.instanceId -}}
+{{- define "memoryfs.instanceSecretName" -}}
+{{- printf "%s-instance" (include "memoryfs.fullname" .) -}}
 {{- end }}
 
 {{- define "memoryfs.chunkBackend" -}}

@@ -285,7 +285,7 @@ kubectl -n memoryfs exec memoryfs-0 -- tar -czf - /data > backup-node0.tar.gz
 | `node.diskSync.interval` | `30s` | 落盘/fsync 间隔（开关开启时） |
 | `node.storage.type` | `hostPath` | `hostPath`=节点本地盘；`emptyDir`=临时卷 |
 | `node.storage.hostPath` | `/data/memoryfs` | 节点本地盘根目录 |
-| `node.storage.instanceId` | Helm Release 名 | 部署实例 ID，数据目录为 `{hostPath}/{instanceId}/{podName}` |
+| `node.storage.instanceId` | 随机 8 位数字 | 首次安装自动生成并写入 Secret；升级不变 |
 | `node.gcInterval` | `5m` | 孤儿 chunk GC 间隔 |
 | `node.diskQuotaGB` | `0` | 本地磁盘配额（落盘开启时可设限） |
 | `node.lifecycle.preStopDrain` | `true` | 缩容/重启前 drain |
@@ -308,11 +308,7 @@ helm upgrade memoryfs "${CHART}" -n memoryfs \
   --set node.diskQuotaGB=100
 ```
 
-数据落在节点 `/data/memoryfs/{release名}/memoryfs-0` 等路径下；多实例部署时可指定不同 ID：
-
-```bash
---set node.storage.instanceId=cluster-a
-```
+数据落在节点 `/data/memoryfs/{8位ID}/memoryfs-0` 等路径下（ID 首次安装随机生成，存于 Secret `{release}-instance`）。
 
 关闭路径前缀（根路径访问 `/dashboard`）：
 
