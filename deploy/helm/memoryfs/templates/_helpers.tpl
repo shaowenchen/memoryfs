@@ -51,6 +51,10 @@ component: node
 {{- end }}
 {{- end }}
 
+{{- define "memoryfs.instanceId" -}}
+{{- default .Release.Name .Values.node.storage.instanceId -}}
+{{- end }}
+
 {{- define "memoryfs.chunkBackend" -}}
 {{- $backend := .Values.node.chunkBackend -}}
 {{- if $backend -}}

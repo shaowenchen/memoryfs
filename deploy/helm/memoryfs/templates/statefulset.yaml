@@ -56,6 +56,8 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.namespace
+            - name: MEMORYFS_INSTANCE_ID
+              value: {{ include "memoryfs.instanceId" . | quote }}
             - name: MEMORYFS_DATA
               value: {{ .Values.node.dataDir | quote }}
             - name: MEMORYFS_CHUNK_DIR
@@ -125,7 +127,7 @@ spec:
             - name: data
               mountPath: {{ .Values.node.dataDir }}
               {{- if eq .Values.node.storage.type "hostPath" }}
-              subPathExpr: $(POD_NAME)
+              subPathExpr: $(MEMORYFS_INSTANCE_ID)/$(POD_NAME)
               {{- end }}
       volumes:
         - name: data

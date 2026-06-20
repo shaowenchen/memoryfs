@@ -284,7 +284,8 @@ kubectl -n memoryfs exec memoryfs-0 -- tar -czf - /data > backup-node0.tar.gz
 | `node.diskSync.enabled` | `false` | 定时落盘开关 |
 | `node.diskSync.interval` | `30s` | 落盘/fsync 间隔（开关开启时） |
 | `node.storage.type` | `hostPath` | `hostPath`=节点本地盘；`emptyDir`=临时卷 |
-| `node.storage.hostPath` | `/var/lib/memoryfs` | 本地盘根目录（每 Pod 用 `$(POD_NAME)` 子目录） |
+| `node.storage.hostPath` | `/data/memoryfs` | 节点本地盘根目录 |
+| `node.storage.instanceId` | Helm Release 名 | 部署实例 ID，数据目录为 `{hostPath}/{instanceId}/{podName}` |
 | `node.gcInterval` | `5m` | 孤儿 chunk GC 间隔 |
 | `node.diskQuotaGB` | `0` | 本地磁盘配额（落盘开启时可设限） |
 | `node.lifecycle.preStopDrain` | `true` | 缩容/重启前 drain |
@@ -296,16 +297,21 @@ kubectl -n memoryfs exec memoryfs-0 -- tar -czf - /data > backup-node0.tar.gz
 示例：启用定时落盘 + 本地 hostPath（生产）
 
 ```bash
-# 各节点预先创建目录（Chart 也会 DirectoryOrCreate）
-sudo mkdir -p /var/lib/memoryfs
+# 各节点预先创建根目录（Chart 也会 DirectoryOrCreate）
+sudo mkdir -p /data/memoryfs
 
 helm upgrade memoryfs "${CHART}" -n memoryfs \
   --set image.tag="v${VERSION}" \
   --set node.diskSync.enabled=true \
   --set node.diskSync.interval=30s \
   --set node.storage.type=hostPath \
-  --set node.storage.hostPath=/var/lib/memoryfs \
   --set node.diskQuotaGB=100
+```
+
+数据落在节点 `/data/memoryfs/{release名}/memoryfs-0` 等路径下；多实例部署时可指定不同 ID：
+
+```bash
+--set node.storage.instanceId=cluster-a
 ```
 
 关闭路径前缀（根路径访问 `/dashboard`）：

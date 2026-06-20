@@ -40,10 +40,11 @@ node:
       cpu: "2"
       memory: 4Gi
 
-  # emptyDir = ephemeral; hostPath = node local disk (one subdir per Pod under hostPath)
+  # emptyDir = ephemeral; hostPath = /data/memoryfs/{instanceId}/{podName} on the node
   storage:
     type: hostPath
-    hostPath: /var/lib/memoryfs
+    hostPath: /data/memoryfs
+    instanceId: ""
     hostPathType: DirectoryOrCreate
 
   podManagementPolicy: OrderedReady
