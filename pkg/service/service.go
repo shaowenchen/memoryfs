@@ -323,13 +323,6 @@ func (s *Service) Health() (status, state, role string, epoch uint64, pending in
 	return "ok", string(s.cfg.Lifecycle.State()), role, epoch, s.cfg.Lifecycle.PendingDrain()
 }
 
-func (s *Service) replicaSet(ctx context.Context, chunkID string, nodes []string) ([]string, error) {
-	if loc, err := s.cfg.Registry.Get(chunkID); err == nil {
-		return loc.Replicas, nil
-	}
-	return chunk.SelectNodes(nodes, chunkID, s.cfg.ReplicaFactor)
-}
-
 func chunkContains(replicas []string, node string) bool {
 	for _, r := range replicas {
 		if r == node {

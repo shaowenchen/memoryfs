@@ -21,7 +21,7 @@ helm upgrade --install memoryfs \
 
 - `replicaCount` — 节点数（每 K8s 节点最多 1 个 Pod）
 - `replicaFactor` — 数据副本数
-- `node.storageGB` — 每节点最大存储（GB）；Pod 内存 limit/request = storageGB+1Gi
+- `node.storageGB` — 每节点最大存储（GB）
 
 ## 挂载
 

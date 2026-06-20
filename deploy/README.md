@@ -61,7 +61,7 @@ helm upgrade --install memoryfs "${CHART}" \
 
 - `replicaCount` — 节点数（每 K8s 节点最多 1 个 Pod）
 - `replicaFactor` — 数据副本数
-- `node.storageGB` — 每节点最大存储（GB）；Pod 内存 = storageGB+1Gi
+- `node.storageGB` — 每节点最大存储（GB）（Pod 内存规则见 [docs/ARCHITECTURE.md](../docs/ARCHITECTURE.md#资源与-storagegb)）
 
 网络与 RDMA 见 [docs/ARCHITECTURE.md](../docs/ARCHITECTURE.md#kubernetes-部署)。
 

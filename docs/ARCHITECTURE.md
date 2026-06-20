@@ -74,6 +74,10 @@ K8s 滚动更新：StatefulSet + preStop drain + postStart ready + PDB。详见 
 
 无需单独 Helm 开关。节点有 RDMA 设备（InfiniBand / RoCE，`/dev/infiniband/uverbs*`）时自动走 RDMA 传输，否则降级 gRPC/HTTP。Chart 默认挂载 `/dev/infiniband` 并注入 `IPC_LOCK`；镜像默认带 `rdma` 构建标签。
 
+### 资源与 storageGB
+
+Helm 参数 `node.storageGB` 表示每节点 chunk 存储上限（GB）。Chart 自动设置 Pod 内存 **request/limit = storageGB + 1Gi**（额外 1Gi 预留给进程、Raft 与运行时开销）；磁盘配额 `diskQuotaGB` 与 `storageGB` 一致。
+
 ## 集群 Epoch
 
 节点 join/leave 时 epoch +1。客户端可通过 `/health` 感知拓扑变化。
