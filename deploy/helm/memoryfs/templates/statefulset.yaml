@@ -37,12 +37,16 @@ spec:
         - name: wait-for-bootstrap
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: Always
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
           command:
             - sh
             - -c
             - |
-              ORD="$(hostname)"
-              ORD="${ORD##*-}"
+              ORD="${POD_NAME##*-}"
               if [ "$ORD" = "0" ]; then exit 0; fi
               BOOT0="http://{{ include "memoryfs.fullname" . }}-0.{{ include "memoryfs.headless" . }}.{{ .Release.Namespace }}.svc:{{ .Values.service.httpPort }}"
               echo "waiting for ${BOOT0}/health ..."

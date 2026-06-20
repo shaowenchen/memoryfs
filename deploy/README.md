@@ -44,9 +44,11 @@
 ## 快速开始
 
 ```bash
-CHART=https://github.com/shaowenchen/memoryfs/releases/download/latest/memoryfs-latest.tar.gz
-
 kubectl label node <node-name> memoryfs.io/node=true
+```
+
+```bash
+CHART=https://github.com/shaowenchen/memoryfs/releases/download/latest/memoryfs-latest.tar.gz
 
 helm upgrade --install memoryfs "${CHART}" \
   --namespace memoryfs --create-namespace \

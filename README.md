@@ -6,7 +6,9 @@
 
 ```bash
 kubectl label node <node-name> memoryfs.io/node=true
+```
 
+```bash
 helm upgrade --install memoryfs \
   https://github.com/shaowenchen/memoryfs/releases/download/latest/memoryfs-latest.tar.gz \
   -n memoryfs --create-namespace \
