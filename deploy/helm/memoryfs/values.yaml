@@ -1,5 +1,4 @@
 # Default values for MemoryFS Helm chart.
-# Dev/test: memory backend, no periodic disk sync. Enable node.diskSync for flush-to-disk.
 
 replicaCount: 3
 
@@ -19,12 +18,12 @@ serviceAccount:
 replicaFactor: 2
 
 node:
-  # Auto when empty: memory (diskSync off) / buffered (diskSync on)
+  # Empty = auto from diskSync: memory (off) / buffered (on)
   chunkBackend: ""
   memCacheMB: 512
   diskQuotaGB: 0
   gcInterval: 5m
-  # Periodic chunk flush/fsync to local disk (emptyDir or PVC mount).
+  # Periodic chunk flush/fsync to node.dataDir (emptyDir or PVC).
   diskSync:
     enabled: false
     interval: 30s
@@ -41,13 +40,13 @@ node:
       cpu: "2"
       memory: 4Gi
 
+  # false = emptyDir; true = PVC volumeClaimTemplate
   persistence:
     enabled: false
     storageClass: ""
     size: 100Gi
     accessModes:
       - ReadWriteOnce
-  # Optional PVC for raft/chunk paths across Pod reschedule (independent of diskSync).
 
   podManagementPolicy: OrderedReady
   updateStrategy: RollingUpdate

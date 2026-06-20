@@ -273,8 +273,6 @@ kubectl -n memoryfs exec memoryfs-0 -- tar -czf - /data > backup-node0.tar.gz
 
 ## Helm 参数参考
 
-Chart 默认：3 节点、RF=2、memory 后端、不定时落盘。按需开启 `node.diskSync` 或 PVC。
-
 | 参数 | 默认 | 说明 |
 |------|------|------|
 | `replicaCount` | `3` | StatefulSet 节点数 |
@@ -282,10 +280,10 @@ Chart 默认：3 节点、RF=2、memory 后端、不定时落盘。按需开启 
 | `image.repository` | `shaowenchen/memoryfs` | 镜像仓库 |
 | `image.tag` | `latest` | 镜像标签（Release 安装建议设 `v0.1.0`） |
 | `image.pullPolicy` | `IfNotPresent` | 镜像拉取策略 |
-| `node.diskSync.enabled` | `false` | **定时落盘开关** |
+| `node.chunkBackend` | `memory` | 空值时随 `diskSync` 自动选 `memory`/`buffered` |
+| `node.diskSync.enabled` | `false` | 定时落盘开关 |
 | `node.diskSync.interval` | `30s` | 落盘/fsync 间隔（开关开启时） |
-| `node.chunkBackend` | 自动 | 关=`memory`，开=`buffered`；可手动覆盖 |
-| `node.persistence.enabled` | `false` | 可选 PVC（Pod 重建后保留目录，与落盘开关独立） |
+| `node.persistence.enabled` | `false` | `false`=emptyDir（Pod 重建数据不保留）；`true`=PVC |
 | `node.persistence.size` | `100Gi` | PVC 大小 |
 | `node.gcInterval` | `5m` | 孤儿 chunk GC 间隔 |
 | `node.diskQuotaGB` | `0` | 本地磁盘配额（落盘开启时可设限） |

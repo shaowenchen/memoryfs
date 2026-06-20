@@ -4,8 +4,6 @@
 
 ## 安装
 
-默认纯内存 Chunk，**不定时落盘**。
-
 ```bash
 VERSION=0.1.0
 CHART="https://github.com/shaowenchen/memoryfs/releases/download/v${VERSION}/memoryfs-${VERSION}.tgz"
