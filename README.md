@@ -26,7 +26,6 @@ helm upgrade --install memoryfs "${CHART}" \
 
 ```bash
 helm uninstall memoryfs -n memoryfs
-kubectl delete namespace memoryfs   # 可选
 ```
 
 ## 文档
