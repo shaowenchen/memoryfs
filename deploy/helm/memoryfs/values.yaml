@@ -48,7 +48,7 @@ node:
     instanceId: ""
     hostPathType: DirectoryOrCreate
 
-  podManagementPolicy: OrderedReady
+  podManagementPolicy: OrderedReady # pod-N+1 starts only after pod-N is Ready
   updateStrategy: RollingUpdate
 
   # Lifecycle hooks for safe rolling updates.

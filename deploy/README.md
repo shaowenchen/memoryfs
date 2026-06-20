@@ -243,6 +243,7 @@ kubectl -n memoryfs exec memoryfs-0 -- tar -czf - /data > backup-node0.tar.gz
 | `node.gcInterval` | `5m` | 孤儿 chunk GC 间隔 |
 | `node.diskQuotaGB` | `0` | 本地磁盘配额（落盘开启时可设限） |
 | `node.lifecycle.preStopDrain` | `true` | 缩容/重启前 drain |
+| `node.podManagementPolicy` | `OrderedReady` | 按序启动：pod-0 Ready 后再起 pod-1、pod-2 |
 | `dashboard.uriPrefix` | `/memoryfs` | 管理面板与 HTTP API 路径前缀 |
 | `apiToken` | | 写操作 Bearer Token（可选） |
 | `metrics.enabled` | `false` | 启用 ServiceMonitor |
@@ -346,7 +347,7 @@ https://github.com/shaowenchen/memoryfs/releases/download/v0.1.0/memoryfs-0.1.0.
 |------|------|
 | Pod `ContainerCreating` 卡住 | 看 Events：`FailedMount` 检查节点 `/data/memoryfs` 是否存在；升级最新 Chart 后由启动脚本自动 mkdir |
 | `ImagePullBackOff` | 确认镜像存在：优先 `--set image.tag=latest`；国内可用 ACR 镜像 |
-| `CrashLoopBackOff`（1/2） | 先看 `kubectl logs memoryfs-1`；常见为旧镜像 `meta store: not leader`，需拉最新镜像；或 0 未 Ready 时 join 失败（会重试，不应致命） |
+| `CrashLoopBackOff`（1/2） | 先看 `kubectl logs memoryfs-1`；升级最新 Chart 后 follower 会等 0 的 `/health` 再启动 |
 | `meta store: not leader` | 确保 memoryfs-0 先 Ready；`helm upgrade` 拉取含修复的新镜像 |
 | 节点 `draining` 卡住 | 检查 peer 可达；必要时 `drain?force=true` |
 | chunk 缺失 | `node-rebuild.sh` 或 restart（自动 ready） |
