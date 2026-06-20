@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>MemoryFS 管理面板</title>
+  <title>MemoryFS</title>
   <style>
     :root {
       --bg: #0f1419;
@@ -12,8 +12,6 @@
       --text: #e6edf3;
       --muted: #8b9cb3;
       --accent: #3b82f6;
-      --ok: #22c55e;
-      --warn: #f59e0b;
       --err: #ef4444;
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -21,75 +19,55 @@
       font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
       background: var(--bg);
       color: var(--text);
-      min-height: 100vh;
+      padding: 1.25rem;
+      max-width: 1100px;
+      margin: 0 auto;
     }
-    .layout { display: flex; min-height: 100vh; }
-    nav {
-      width: 220px;
-      background: var(--card);
-      border-right: 1px solid var(--border);
-      padding: 1.25rem 0;
-      flex-shrink: 0;
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1.25rem;
+      gap: 1rem;
+      flex-wrap: wrap;
     }
-    nav .brand {
-      padding: 0 1.25rem 1rem;
-      border-bottom: 1px solid var(--border);
-      margin-bottom: 0.75rem;
-    }
-    nav h1 { font-size: 1.1rem; font-weight: 600; }
-    nav .sub { color: var(--muted); font-size: 0.75rem; margin-top: 0.25rem; }
-    nav a {
-      display: block;
-      padding: 0.65rem 1.25rem;
-      color: var(--muted);
-      text-decoration: none;
-      font-size: 0.875rem;
-      border-left: 3px solid transparent;
-    }
-    nav a.active, nav a:hover { color: var(--text); background: #243044; border-left-color: var(--accent); }
-    main { flex: 1; padding: 1.5rem; overflow: auto; }
-    .toolbar { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; margin-bottom: 1.25rem; }
-    input, button, select {
+    h1 { font-size: 1.25rem; font-weight: 600; }
+    .toolbar { display: flex; gap: 0.5rem; align-items: center; }
+    input, button {
       background: var(--card);
       border: 1px solid var(--border);
       color: var(--text);
-      padding: 0.5rem 0.75rem;
+      padding: 0.45rem 0.7rem;
       border-radius: 6px;
       font-size: 0.875rem;
     }
-    input { min-width: 180px; }
-    button {
-      cursor: pointer;
-      background: var(--accent);
-      border-color: var(--accent);
-      font-weight: 500;
-    }
+    input { width: 140px; }
+    button { cursor: pointer; background: var(--accent); border-color: var(--accent); }
     button.secondary { background: var(--card); border-color: var(--border); }
     button.danger { background: #7f1d1d; border-color: #991b1b; }
-    button:disabled { opacity: 0.5; cursor: not-allowed; }
     .grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-      gap: 1rem;
+      grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+      gap: 0.75rem;
       margin-bottom: 1.25rem;
     }
     .card {
       background: var(--card);
       border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 1rem;
+      border-radius: 8px;
+      padding: 0.85rem;
     }
-    .card label { display: block; color: var(--muted); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; }
-    .card .val { font-size: 1.35rem; font-weight: 600; margin-top: 0.35rem; word-break: break-all; }
-    table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
-    th, td { text-align: left; padding: 0.75rem; border-bottom: 1px solid var(--border); }
+    .card label { display: block; color: var(--muted); font-size: 0.7rem; }
+    .card .val { font-size: 1.2rem; font-weight: 600; margin-top: 0.25rem; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.85rem; background: var(--card); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+    th, td { text-align: left; padding: 0.65rem 0.75rem; border-bottom: 1px solid var(--border); }
     th { color: var(--muted); font-weight: 500; }
+    tr:last-child td { border-bottom: none; }
     .badge {
       display: inline-block;
-      padding: 0.15rem 0.5rem;
+      padding: 0.1rem 0.45rem;
       border-radius: 999px;
-      font-size: 0.75rem;
-      font-weight: 500;
+      font-size: 0.7rem;
     }
     .badge.leader { background: #1e3a5f; color: #93c5fd; }
     .badge.follower { background: #374151; color: #d1d5db; }
@@ -97,109 +75,31 @@
     .badge.draining { background: #713f12; color: #fcd34d; }
     .badge.drained { background: #450a0a; color: #fca5a5; }
     .badge.down { background: #450a0a; color: #fca5a5; }
-    .panel { display: none; }
-    .panel.active { display: block; }
-    .panel h2 { font-size: 1rem; margin-bottom: 0.75rem; color: var(--muted); font-weight: 500; }
-    #status { color: var(--muted); font-size: 0.8rem; margin-top: 1rem; }
-    .actions { display: flex; gap: 0.35rem; flex-wrap: wrap; }
-    .actions button { padding: 0.25rem 0.5rem; font-size: 0.75rem; }
-    pre.repair {
-      background: #0d1117;
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 0.75rem;
-      font-size: 0.75rem;
-      overflow: auto;
-      max-height: 240px;
-    }
-    .hint { color: var(--muted); font-size: 0.8rem; line-height: 1.5; }
-    .links { display: flex; gap: 0.75rem; flex-wrap: wrap; margin-top: 0.75rem; }
-    .links a { color: var(--accent); font-size: 0.875rem; }
-    @media (max-width: 768px) {
-      .layout { flex-direction: column; }
-      nav { width: 100%; display: flex; flex-wrap: wrap; gap: 0; padding: 0.75rem; }
-      nav .brand { width: 100%; border: none; margin: 0; padding: 0 0.5rem 0.5rem; }
-      nav a { padding: 0.5rem 0.75rem; border-left: none; border-bottom: 2px solid transparent; }
-    }
+    #status { color: var(--muted); font-size: 0.75rem; margin-top: 0.75rem; }
+    .actions button { padding: 0.2rem 0.45rem; font-size: 0.7rem; margin-right: 0.25rem; }
   </style>
 </head>
 <body>
-  <div class="layout">
-    <nav>
-      <div class="brand">
-        <h1>MemoryFS</h1>
-        <p class="sub">集群管理面板</p>
-      </div>
-      <a href="#" class="active" data-panel="overview">集群概览</a>
-      <a href="#" data-panel="nodes">节点管理</a>
-      <a href="#" data-panel="ops">运维操作</a>
-      <a href="#" data-panel="about">关于</a>
-    </nav>
+  <header>
+    <h1>MemoryFS</h1>
+    <div class="toolbar">
+      <input id="token" type="password" placeholder="Token" title="写操作 API Token" />
+      <button class="secondary" onclick="refresh()">刷新</button>
+    </div>
+  </header>
 
-    <main>
-      <div class="toolbar">
-        <input id="token" type="password" placeholder="API Token (写操作需要)" />
-        <button onclick="refresh()">刷新</button>
-      </div>
+  <div class="grid" id="summary"></div>
 
-      <section id="overview" class="panel active">
-        <div class="grid" id="summary"></div>
-        <p class="hint">数据每 5 秒自动刷新。面板与 HTTP API 共用同一 Node 进程与镜像。</p>
-      </section>
+  <table>
+    <thead>
+      <tr>
+        <th>节点</th><th>角色</th><th>状态</th><th>Chunks</th><th>磁盘</th><th>操作</th>
+      </tr>
+    </thead>
+    <tbody id="node-rows"></tbody>
+  </table>
 
-      <section id="nodes" class="panel">
-        <h2>集群节点</h2>
-        <div class="card" style="padding:0; overflow:hidden">
-          <table>
-            <thead>
-              <tr>
-                <th>节点</th><th>角色</th><th>状态</th><th>Chunks</th><th>磁盘</th><th>内存缓存</th><th>Epoch</th><th>操作</th>
-              </tr>
-            </thead>
-            <tbody id="node-rows"></tbody>
-          </table>
-        </div>
-      </section>
-
-      <section id="ops" class="panel">
-        <h2>集群运维</h2>
-        <div class="card" style="margin-bottom:1rem">
-          <p class="hint" style="margin-bottom:0.75rem">以下操作会修改集群状态，建议滚动更新前先 Drain 目标节点。</p>
-          <div class="actions">
-            <button onclick="runRepair()">立即修复副本</button>
-            <button class="secondary" onclick="runGC()">清理孤儿 Chunk (GC)</button>
-            <button class="secondary" onclick="localReady()">本节点 Ready</button>
-            <button class="danger" onclick="localDrain()">本节点 Drain</button>
-          </div>
-        </div>
-        <h2>副本修复队列</h2>
-        <div class="card">
-          <pre class="repair" id="repair">加载中...</pre>
-        </div>
-      </section>
-
-      <section id="about" class="panel">
-        <h2>访问路径</h2>
-        <div class="card">
-          <label>URI Prefix</label>
-          <div class="val" id="uri-prefix">__MEMORYFS_URI_PREFIX__</div>
-          <div class="links">
-            <a id="link-dashboard" href="#">Dashboard</a>
-            <a id="link-health" href="#">Health</a>
-            <a id="link-metrics" href="#">Metrics</a>
-            <a id="link-overview" href="#">Overview API</a>
-          </div>
-          <p class="hint" style="margin-top:1rem">
-            默认经 Kubernetes Service 或 port-forward 访问，无需 Ingress。
-            集群内示例：<code>http://memoryfs.&lt;namespace&gt;.svc:8080/memoryfs/dashboard</code>。
-            探针仍使用无前缀的 <code>/health</code> 与 <code>/metrics</code>。
-          </p>
-        </div>
-      </section>
-
-      <p id="status"></p>
-    </main>
-  </div>
+  <p id="status"></p>
 
   <script>
     const URI_PREFIX = '__MEMORYFS_URI_PREFIX__';
@@ -211,16 +111,6 @@
       let i = 0; while (n >= 1024 && i < u.length-1) { n/=1024; i++; }
       return n.toFixed(1) + ' ' + u[i];
     };
-
-    document.querySelectorAll('nav a[data-panel]').forEach(a => {
-      a.addEventListener('click', e => {
-        e.preventDefault();
-        document.querySelectorAll('nav a').forEach(x => x.classList.remove('active'));
-        document.querySelectorAll('.panel').forEach(x => x.classList.remove('active'));
-        a.classList.add('active');
-        document.getElementById(a.dataset.panel).classList.add('active');
-      });
-    });
 
     function headers() {
       const h = {'Content-Type':'application/json'};
@@ -239,15 +129,6 @@
 
     function badge(cls, text) { return `<span class="badge ${cls}">${text}</span>`; }
 
-    function setupLinks() {
-      const dash = path('/dashboard');
-      document.getElementById('uri-prefix').textContent = URI_PREFIX || '(无，根路径访问)';
-      document.getElementById('link-dashboard').href = dash;
-      document.getElementById('link-health').href = path('/health');
-      document.getElementById('link-metrics').href = path('/metrics');
-      document.getElementById('link-overview').href = path('/v1/cluster/overview');
-    }
-
     async function refresh() {
       const st = document.getElementById('status');
       st.textContent = '刷新中...';
@@ -256,7 +137,6 @@
         const ov = data.overview || data;
         renderSummary(ov);
         renderNodes(ov.nodes || []);
-        renderRepair(ov.repair || {});
         st.textContent = '更新于 ' + new Date().toLocaleTimeString();
       } catch (e) {
         st.textContent = '错误: ' + e.message;
@@ -266,12 +146,11 @@
     function renderSummary(ov) {
       const el = document.getElementById('summary');
       const cards = [
-        ['Leader', ov.leader || '-'],
+        ['Leader', (ov.leader || '-').replace(/^https?:\/\//, '')],
         ['Epoch', ov.cluster_epoch ?? '-'],
         ['RF', ov.replica_factor ?? '-'],
-        ['节点数', (ov.nodes||[]).length],
-        ['修复队列', ov.repair?.pending ?? 0],
-        ['本节点', ov.node_id || '-'],
+        ['节点', (ov.nodes||[]).length],
+        ['修复', ov.repair?.pending ?? 0],
       ];
       el.innerHTML = cards.map(([l,v]) =>
         `<div class="card"><label>${l}</label><div class="val">${v}</div></div>`
@@ -279,31 +158,22 @@
     }
 
     function renderNodes(nodes) {
-      const tbody = document.getElementById('node-rows');
-      tbody.innerHTML = nodes.map(n => {
+      document.getElementById('node-rows').innerHTML = nodes.map(n => {
         const role = n.reachable ? badge(n.role||'follower', n.role||'?') : badge('down','不可达');
         const state = n.reachable ? badge(n.node_state||'active', n.node_state||'?') : badge('down','-');
         const stats = n.stats || {};
         return `<tr>
-          <td><code>${n.url||'-'}</code>${n.error?'<br><small style="color:var(--err)">'+n.error+'</small>':''}</td>
+          <td><code>${(n.url||'-').replace(/^https?:\/\//, '')}</code></td>
           <td>${role}</td>
           <td>${state}</td>
           <td>${stats.chunk_count??'-'}</td>
           <td>${fmtBytes(stats.disk_bytes)}</td>
-          <td>${fmtBytes(stats.mem_cache_bytes)}</td>
-          <td>${n.cluster_epoch??'-'}</td>
           <td class="actions">
             <button class="secondary" onclick="nodeAction('${n.url}','/v1/lifecycle/ready')">Ready</button>
             <button class="danger" onclick="nodeAction('${n.url}','/v1/lifecycle/drain')">Drain</button>
           </td>
         </tr>`;
       }).join('');
-    }
-
-    function renderRepair(repair) {
-      const el = document.getElementById('repair');
-      if (!repair.pending) { el.textContent = '队列为空'; return; }
-      el.textContent = JSON.stringify(repair, null, 2);
     }
 
     async function nodeAction(base, p) {
@@ -316,28 +186,6 @@
       } catch (e) { alert(e.message); }
     }
 
-    async function runRepair() {
-      try { await api('/v1/repair/run', 'POST', {}); refresh(); }
-      catch (e) { alert(e.message); }
-    }
-
-    async function runGC() {
-      try { await api('/v1/gc', 'POST', {}); refresh(); }
-      catch (e) { alert(e.message); }
-    }
-
-    async function localReady() {
-      try { await api('/v1/lifecycle/ready', 'POST', {}); refresh(); }
-      catch (e) { alert(e.message); }
-    }
-
-    async function localDrain() {
-      if (!confirm('确认 drain 本节点？将停止接受新 chunk 写入。')) return;
-      try { await api('/v1/lifecycle/drain', 'POST', {}); refresh(); }
-      catch (e) { alert(e.message); }
-    }
-
-    setupLinks();
     refresh();
     setInterval(refresh, 5000);
   </script>
