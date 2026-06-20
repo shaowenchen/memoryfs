@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/shaowenchen/memoryfs/pkg/cli"
@@ -57,6 +58,7 @@ func TestFormatBytes(t *testing.T) {
 
 func TestBenchmarkRoundTrip(t *testing.T) {
 	store := map[string][]byte{}
+	var mu sync.RWMutex
 	var baseURL string
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
@@ -65,11 +67,15 @@ func TestBenchmarkRoundTrip(t *testing.T) {
 		case r.Method == http.MethodPut && strings.HasPrefix(r.URL.Path, "/chunks/"):
 			id := strings.TrimPrefix(r.URL.Path, "/chunks/")
 			body, _ := io.ReadAll(r.Body)
+			mu.Lock()
 			store[id] = body
+			mu.Unlock()
 			w.WriteHeader(http.StatusCreated)
 		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/chunks/"):
 			id := strings.TrimPrefix(r.URL.Path, "/chunks/")
+			mu.RLock()
 			data, ok := store[id]
+			mu.RUnlock()
 			if !ok {
 				http.NotFound(w, r)
 				return
@@ -77,7 +83,9 @@ func TestBenchmarkRoundTrip(t *testing.T) {
 			_, _ = w.Write(data)
 		case r.Method == http.MethodDelete && strings.HasPrefix(r.URL.Path, "/chunks/"):
 			id := strings.TrimPrefix(r.URL.Path, "/chunks/")
+			mu.Lock()
 			delete(store, id)
+			mu.Unlock()
 			w.WriteHeader(http.StatusNoContent)
 		default:
 			http.NotFound(w, r)
@@ -96,7 +104,10 @@ func TestBenchmarkRoundTrip(t *testing.T) {
 	if res.WriteMBs <= 0 || res.ReadMBs <= 0 {
 		t.Fatalf("throughput: write=%.2f read=%.2f", res.WriteMBs, res.ReadMBs)
 	}
-	if len(store) != 0 {
-		t.Fatalf("cleanup left chunks: %d", len(store))
+	mu.RLock()
+	left := len(store)
+	mu.RUnlock()
+	if left != 0 {
+		t.Fatalf("cleanup left chunks: %d", left)
 	}
 }
