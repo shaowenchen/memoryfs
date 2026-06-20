@@ -1,5 +1,5 @@
 #!/bin/sh
-# Start memoryfs node from environment variables (Docker / Kubernetes).
+# Start memoryfs node from environment variables (Kubernetes / node-env entrypoint).
 set -e
 
 ID="${MEMORYFS_ID:-n1}"

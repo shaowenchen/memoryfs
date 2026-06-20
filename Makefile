@@ -5,11 +5,12 @@ HELM_CHART = https://github.com/shaowenchen/memoryfs/releases/download/v$(VERSIO
 .PHONY: proto build test tidy docker-build deploy-scripts help
 
 help:
-	@echo "Targets: proto build test tidy docker-build deploy-scripts"
-	@echo "  deploy-up       - start 3-node docker cluster"
-	@echo "  deploy-status   - show cluster status (status CLI)"
+	@echo "Targets: proto build test tidy docker-build deploy-scripts helm-install helm-install-local"
+	@echo "  deploy-status   - cluster status (requires port-forward or local node)"
 	@echo "  status          - cluster storage status"
 	@echo "  benchmark       - storage throughput test"
+	@echo "  helm-install    - install from Release chart"
+	@echo "  helm-install-local - install from ./deploy/helm/memoryfs"
 
 proto:
 	protoc --go_out=. --go_opt=module=github.com/shaowenchen/memoryfs \
@@ -37,12 +38,6 @@ docker-build:
 
 deploy-scripts:
 	chmod +x deploy/scripts/*.sh
-
-deploy-up: deploy-scripts
-	docker compose -f deploy/docker-compose.cluster.yml up -d
-
-deploy-down:
-	docker compose -f deploy/docker-compose.cluster.yml down
 
 deploy-status: deploy-scripts
 	./bin/status -nodes http://127.0.0.1:8080 || ./deploy/scripts/cluster-status.sh http://127.0.0.1:8080

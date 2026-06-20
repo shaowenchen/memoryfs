@@ -53,23 +53,6 @@ memoryfs benchmark -nodes http://127.0.0.1:8080 \
 
 未指定 `-uri-prefix` 时自动探测 `/memoryfs`。环境变量：`MEMORYFS_NODES`、`MEMORYFS_URI_PREFIX`、`MEMORYFS_API_TOKEN`。
 
-## Docker
-
-```bash
-# Node 单节点
-docker run -d -p 8080:8080 -v data:/data shaowenchen/memoryfs:latest \
-  node -standalone -id n1 -http :8080 -data /data
-
-# 状态 / 压测
-docker run --rm shaowenchen/memoryfs:latest \
-  status -nodes http://host:8080
-
-# FUSE（需 privileged）
-docker run -it --rm --privileged --device /dev/fuse --cap-add SYS_ADMIN \
-  -v /tmp/memoryfs:/mnt/memoryfs shaowenchen/memoryfs:latest \
-  mount -mount /mnt/memoryfs -nodes http://node:8080 -f
-```
-
 ## 运维面板
 
 Helm 默认经 Service 访问：
