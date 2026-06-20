@@ -4,6 +4,9 @@ description: Distributed memory-oriented filesystem cluster
 type: application
 version: 0.1.0
 appVersion: "latest"
+home: https://github.com/shaowenchen/memoryfs
+sources:
+  - https://github.com/shaowenchen/memoryfs
 keywords:
   - memoryfs
   - fuse

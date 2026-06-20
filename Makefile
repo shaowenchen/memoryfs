@@ -1,4 +1,6 @@
 IMG ?= shaowenchen/memoryfs:latest
+VERSION ?= 0.1.0
+HELM_CHART = https://github.com/shaowenchen/memoryfs/releases/download/v$(VERSION)/memoryfs-$(VERSION).tgz
 
 .PHONY: proto build test tidy docker-build deploy-scripts help
 
@@ -40,6 +42,11 @@ deploy-status: deploy-scripts
 	./deploy/scripts/cluster-status.sh http://127.0.0.1:8080
 
 helm-install:
+	helm upgrade --install memoryfs $(HELM_CHART) \
+		--namespace memoryfs --create-namespace \
+		--set image.tag=v$(VERSION)
+
+helm-install-local:
 	helm upgrade --install memoryfs ./deploy/helm/memoryfs \
 		--namespace memoryfs --create-namespace
 

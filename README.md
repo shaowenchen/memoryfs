@@ -32,10 +32,14 @@ make deploy-up
 make deploy-status
 ```
 
-Kubernetes Helm：
+Kubernetes Helm（[Release 安装](https://github.com/shaowenchen/memoryfs/releases)）：
 
 ```bash
-helm upgrade --install memoryfs ./deploy/helm/memoryfs -n memoryfs --create-namespace
+VERSION=0.1.0
+helm upgrade --install memoryfs \
+  "https://github.com/shaowenchen/memoryfs/releases/download/v${VERSION}/memoryfs-${VERSION}.tgz" \
+  -n memoryfs --create-namespace \
+  --set image.tag="v${VERSION}"
 ```
 
 ## 三种协议

@@ -67,13 +67,29 @@ chmod +x scripts/*.sh
 
 ### 方式 B：Kubernetes Helm（推荐生产）
 
+从 [GitHub Release](https://github.com/shaowenchen/memoryfs/releases) 安装（推荐）：
+
 ```bash
-# 安装 3 节点集群
+VERSION=0.1.0
+CHART="https://github.com/shaowenchen/memoryfs/releases/download/v${VERSION}/memoryfs-${VERSION}.tgz"
+
+helm upgrade --install memoryfs "${CHART}" \
+  --namespace memoryfs --create-namespace \
+  --set image.tag="v${VERSION}" \
+  --set replicaCount=3 \
+  --set replicaFactor=2 \
+  --set node.persistence.size=100Gi
+```
+
+本地开发可直接使用仓库内 Chart：
+
+```bash
 helm upgrade --install memoryfs ./deploy/helm/memoryfs \
   --namespace memoryfs --create-namespace \
   --set replicaCount=3 \
   --set replicaFactor=2 \
   --set node.persistence.size=100Gi
+```
 
 # 查看 Pod
 kubectl -n memoryfs get pods -l component=node
@@ -86,7 +102,12 @@ kubectl -n memoryfs port-forward svc/memoryfs 8080:8080 &
 启用 FUSE DaemonSet（每节点挂载）：
 
 ```bash
-helm upgrade memoryfs ./deploy/helm/memoryfs \
+VERSION=0.1.0
+CHART="https://github.com/shaowenchen/memoryfs/releases/download/v${VERSION}/memoryfs-${VERSION}.tgz"
+
+helm upgrade memoryfs "${CHART}" \
+  --namespace memoryfs \
+  --set image.tag="v${VERSION}" \
   --set mount.enabled=true \
   --set mount.hostPath=/var/lib/memoryfs
 ```
@@ -100,8 +121,14 @@ helm upgrade memoryfs ./deploy/helm/memoryfs \
 **K8s：**
 
 ```bash
+VERSION=0.1.0
+CHART="https://github.com/shaowenchen/memoryfs/releases/download/v${VERSION}/memoryfs-${VERSION}.tgz"
+
 # 1. 增加副本数
-helm upgrade memoryfs ./deploy/helm/memoryfs --set replicaCount=5
+helm upgrade memoryfs "${CHART}" \
+  --namespace memoryfs \
+  --set image.tag="v${VERSION}" \
+  --set replicaCount=5
 
 # 2. 新 Pod 自动 join + ready + rebuild
 kubectl -n memoryfs rollout status sts/memoryfs
@@ -129,7 +156,9 @@ kubectl -n memoryfs rollout status sts/memoryfs
 ./deploy/scripts/scale-down.sh http://n4:8080 http://n1:8080
 
 # 2. K8s 再降低 replicaCount（从最高 ordinal 开始删）
-helm upgrade memoryfs ./deploy/helm/memoryfs --set replicaCount=3
+VERSION=0.1.0
+CHART="https://github.com/shaowenchen/memoryfs/releases/download/v${VERSION}/memoryfs-${VERSION}.tgz"
+helm upgrade memoryfs "${CHART}" --namespace memoryfs --set image.tag="v${VERSION}" --set replicaCount=3
 
 # 3. 可选：保留 PVC 以备恢复；确认无数据后再删 PVC
 ```
@@ -269,6 +298,27 @@ kubectl -n memoryfs exec memoryfs-0 -- tar -czf - /data > backup-node0.tar.gz
 | `MEMORYFS_CHUNK_BACKEND` | disk / tiered / memory |
 
 完整列表见 `deploy/scripts/node-start.sh`。
+
+---
+
+## 发布 Helm Chart
+
+维护者推送版本 tag 后，GitHub Actions 会自动：
+
+1. 运行测试
+2. 打包 `memoryfs-{version}.tgz` 并上传到 [GitHub Releases](https://github.com/shaowenchen/memoryfs/releases)
+3. 推送 `shaowenchen/memoryfs:v{version}` 镜像
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+用户安装时使用 Release 链接：
+
+```bash
+https://github.com/shaowenchen/memoryfs/releases/download/v0.1.0/memoryfs-0.1.0.tgz
+```
 
 ---
 

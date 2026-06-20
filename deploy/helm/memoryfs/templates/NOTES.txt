@@ -16,7 +16,11 @@
    ./deploy/scripts/cluster-status.sh http://{{ include "memoryfs.fullname" . }}:{{ .Values.service.httpPort }}
 
 5. Scale up (increase replicaCount, then helm upgrade):
-   helm upgrade {{ .Release.Name }} ./deploy/helm/memoryfs --set replicaCount=5
+   helm upgrade {{ .Release.Name }} \
+     https://github.com/shaowenchen/memoryfs/releases/download/v{{ .Chart.AppVersion }}/memoryfs-{{ .Chart.Version }}.tgz \
+     --namespace {{ .Release.Namespace }} \
+     --set image.tag={{ .Chart.AppVersion }} \
+     --set replicaCount=5
 
 6. Scale down (drain node first):
    ./deploy/scripts/scale-down.sh http://{{ include "memoryfs.fullname" . }}-N.{{ include "memoryfs.headless" . }}:{{ .Values.service.httpPort }}
