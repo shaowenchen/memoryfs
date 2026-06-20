@@ -51,6 +51,7 @@ func main() {
 	standalone := flag.Bool("standalone", false, "run without raft (single node)")
 	join := flag.String("join", "", "join an existing cluster via leader HTTP URL")
 	apiToken := flag.String("api-token", "", "optional bearer token for mutating API calls")
+	uriPrefix := flag.String("uri-prefix", "", "HTTP URI prefix for dashboard and API (e.g. /memoryfs)")
 	flag.Parse()
 
 	httpURL := normalizeHTTP(*httpAddr)
@@ -140,7 +141,7 @@ func main() {
 		DefaultTTL:    *defaultTTL,
 	})
 
-	httpSrv := node.NewServer(svc, *apiToken)
+	httpSrv := node.NewServer(svc, *apiToken, *uriPrefix)
 	grpcSrv := grpc.NewServer(grpc.MaxRecvMsgSize(16<<20), grpc.MaxSendMsgSize(16<<20))
 	pb.RegisterMemoryFSServer(grpcSrv, grpcserver.New(svc))
 
@@ -156,8 +157,8 @@ func main() {
 	go serveHTTP(*httpAddr, httpSrv.Handler(), &httpServer)
 	go serveGRPC(*grpcAddr, grpcSrv)
 
-	log.Printf("memoryfs node %s: http=%s grpc=%s chunk_dir=%s rf=%d dashboard=http://%s/",
-		*id, *httpAddr, *grpcAddr, chunkPath, svc.ReplicaFactor(), dashboardAddr(*httpAddr))
+	log.Printf("memoryfs node %s: http=%s grpc=%s chunk_dir=%s rf=%d dashboard=%s",
+		*id, *httpAddr, *grpcAddr, chunkPath, svc.ReplicaFactor(), dashboardAddr(*httpAddr, *uriPrefix))
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
@@ -230,12 +231,13 @@ func joinCluster(leaderURL, id, raftAddr, httpAddr, grpcAddr, rdmaAddr string) e
 	return nil
 }
 
-func dashboardAddr(httpListen string) string {
+func dashboardAddr(httpListen, uriPrefix string) string {
+	path := node.DashboardURL(uriPrefix)
 	if strings.HasPrefix(httpListen, ":") {
-		return "127.0.0.1" + httpListen + "/dashboard"
+		return "http://127.0.0.1" + httpListen + path
 	}
 	if strings.HasPrefix(httpListen, "http") {
-		return strings.TrimRight(httpListen, "/") + "/dashboard"
+		return strings.TrimRight(httpListen, "/") + path
 	}
-	return "http://" + httpListen + "/dashboard"
+	return "http://" + httpListen + path
 }

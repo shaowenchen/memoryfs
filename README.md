@@ -212,14 +212,17 @@ lifecycle:
 | `-flush-interval` | 30s | 本地 chunk 定时落盘/fsync（0=仅 shutdown 时落盘） |
 | `-default-ttl` | 0 | 新建文件 TTL（0=关闭） |
 | `-max-file-age` | 0 | 按 mtime 过期清理（0=关闭） |
+| `-uri-prefix` | | HTTP 路径前缀（如 `/memoryfs`，用于 Ingress 后访问 dashboard/API） |
 | `-api-token` | | 可选 API Bearer Token（保护写操作） |
 
 ## 运维面板
 
-启动节点后访问：
+启动节点后访问（与 API 共用同一进程与镜像）：
 
 ```
 http://127.0.0.1:8080/dashboard
+# 或配置前缀后
+http://127.0.0.1:8080/memoryfs/dashboard
 ```
 
 面板功能：集群节点状态、Leader/Epoch、磁盘用量、副本修复队列、Drain/Ready/GC/Repair 操作。

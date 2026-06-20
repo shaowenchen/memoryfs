@@ -14,19 +14,28 @@ import (
 	"github.com/shaowenchen/memoryfs/pkg/service"
 )
 
-// Server is the unified MemoryFS node HTTP server.
+// Server is the unified MemoryFS node HTTP server (API + dashboard, single binary).
 type Server struct {
-	svc      *service.Service
-	mux      *http.ServeMux
-	apiToken string
+	svc       *service.Service
+	mux       *http.ServeMux
+	apiToken  string
+	uriPrefix string
 }
 
 // NewServer creates a node HTTP server.
-func NewServer(svc *service.Service, apiToken string) *Server {
-	s := &Server{svc: svc, mux: http.NewServeMux(), apiToken: apiToken}
+func NewServer(svc *service.Service, apiToken, uriPrefix string) *Server {
+	s := &Server{
+		svc:       svc,
+		mux:       http.NewServeMux(),
+		apiToken:  apiToken,
+		uriPrefix: NormalizeURIPrefix(uriPrefix),
+	}
 	s.routes()
 	return s
 }
+
+// URIPrefix returns the configured HTTP path prefix for dashboard and API routes.
+func (s *Server) URIPrefix() string { return s.uriPrefix }
 
 func (s *Server) routes() {
 	s.mux.HandleFunc("/", s.handleDashboard)
@@ -63,7 +72,9 @@ func (s *Server) routes() {
 
 // Handler returns the HTTP handler.
 func (s *Server) Handler() http.Handler {
-	return AuthMiddleware(s.apiToken, s.mux)
+	h := http.Handler(s.mux)
+	h = PrefixMiddleware(s.uriPrefix, h)
+	return AuthMiddleware(s.apiToken, h)
 }
 
 // Service returns the underlying service.

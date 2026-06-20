@@ -66,6 +66,21 @@ metrics:
   enabled: false
   interval: 30s
 
+dashboard:
+  # HTTP path prefix for dashboard and API when exposed behind a reverse proxy.
+  uriPrefix: ""
+  ingress:
+    enabled: false
+    className: ""
+    annotations: {}
+    host: ""
+    path: /memoryfs
+    tls: []
+    # tls:
+    #   - secretName: memoryfs-tls
+    #     hosts:
+    #       - memoryfs.example.com
+
 apiToken: ""
 
 service:

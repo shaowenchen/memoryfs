@@ -12,23 +12,40 @@
 3. Cluster service (any ready node):
    http://{{ include "memoryfs.fullname" . }}:{{ .Values.service.httpPort }}
 
-4. Ops scripts (from repo deploy/scripts):
+{{- $uriPrefix := .Values.dashboard.uriPrefix -}}
+{{- if and (not $uriPrefix) .Values.dashboard.ingress.enabled -}}
+{{- $uriPrefix = .Values.dashboard.ingress.path -}}
+{{- end -}}
+{{- if $uriPrefix }}
+
+4. Web dashboard (management UI, same node image):
+   http://{{ include "memoryfs.fullname" . }}:{{ .Values.service.httpPort }}{{ $uriPrefix }}/dashboard
+{{- if .Values.dashboard.ingress.enabled }}
+   Ingress: http{{ if .Values.dashboard.ingress.tls }}s{{ end }}://{{ default "*" .Values.dashboard.ingress.host }}{{ $uriPrefix }}/dashboard
+{{- end }}
+{{- else }}
+
+4. Web dashboard (management UI, same node image):
+   http://{{ include "memoryfs.fullname" . }}:{{ .Values.service.httpPort }}/dashboard
+{{- end }}
+
+5. Ops scripts (from repo deploy/scripts):
    ./deploy/scripts/cluster-status.sh http://{{ include "memoryfs.fullname" . }}:{{ .Values.service.httpPort }}
 
-5. Scale up (increase replicaCount, then helm upgrade):
+6. Scale up (increase replicaCount, then helm upgrade):
    helm upgrade {{ .Release.Name }} \
      https://github.com/shaowenchen/memoryfs/releases/download/v{{ .Chart.AppVersion }}/memoryfs-{{ .Chart.Version }}.tgz \
      --namespace {{ .Release.Namespace }} \
      --set image.tag={{ .Chart.AppVersion }} \
      --set replicaCount=5
 
-6. Scale down (drain node first):
+7. Scale down (drain node first):
    ./deploy/scripts/scale-down.sh http://{{ include "memoryfs.fullname" . }}-N.{{ include "memoryfs.headless" . }}:{{ .Values.service.httpPort }}
 
-7. Backup node PVC:
+8. Backup node PVC:
    kubectl exec {{ include "memoryfs.fullname" . }}-0 -- tar -czf - /data > backup.tar.gz
 
 {{- if .Values.mount.enabled }}
 
-8. FUSE mount available on nodes at: {{ .Values.mount.hostPath }}
+9. FUSE mount available on nodes at: {{ .Values.mount.hostPath }}
 {{- end }}

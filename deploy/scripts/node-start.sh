@@ -18,6 +18,7 @@ FLUSH_INTERVAL="${MEMORYFS_FLUSH_INTERVAL:-30s}"
 DEFAULT_TTL="${MEMORYFS_DEFAULT_TTL:-0}"
 MAX_FILE_AGE="${MEMORYFS_MAX_FILE_AGE:-0}"
 API_TOKEN="${MEMORYFS_API_TOKEN:-}"
+URI_PREFIX="${MEMORYFS_URI_PREFIX:-}"
 BOOTSTRAP="${MEMORYFS_BOOTSTRAP:-false}"
 STANDALONE="${MEMORYFS_STANDALONE:-false}"
 JOIN="${MEMORYFS_JOIN:-}"
@@ -66,5 +67,6 @@ set -- node \
 [ "${STANDALONE}" = "true" ] && set -- "$@" -standalone
 [ -n "${JOIN}" ] && set -- "$@" -join "${JOIN}"
 [ -n "${API_TOKEN}" ] && set -- "$@" -api-token "${API_TOKEN}"
+[ -n "${URI_PREFIX}" ] && set -- "$@" -uri-prefix "${URI_PREFIX}"
 
 exec /app/node "$@"

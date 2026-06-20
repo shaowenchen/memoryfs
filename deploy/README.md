@@ -79,7 +79,19 @@ helm upgrade --install memoryfs "${CHART}" \
   --set replicaCount=3 \
   --set replicaFactor=2 \
   --set node.persistence.size=100Gi
+
+# 通过 Ingress 暴露管理面板（与 API 共用 node 镜像/进程）
+helm upgrade --install memoryfs "${CHART}" \
+  --namespace memoryfs --create-namespace \
+  --set image.tag="v${VERSION}" \
+  --set dashboard.uriPrefix=/memoryfs \
+  --set dashboard.ingress.enabled=true \
+  --set dashboard.ingress.className=nginx \
+  --set dashboard.ingress.host=memoryfs.example.com \
+  --set dashboard.ingress.path=/memoryfs
 ```
+
+访问管理面板：`https://memoryfs.example.com/memoryfs/dashboard`
 
 本地开发可直接使用仓库内 Chart：
 
@@ -92,6 +104,7 @@ helm upgrade --install memoryfs ./deploy/helm/memoryfs \
 ```
 
 # 查看 Pod
+```bash
 kubectl -n memoryfs get pods -l component=node
 
 # 集群状态（通过 Service）
@@ -274,7 +287,8 @@ kubectl -n memoryfs exec memoryfs-0 -- tar -czf - /data > backup-node0.tar.gz
 
 | 接口 | 方法 | 用途 |
 |------|------|------|
-| `/dashboard` | GET | Web 运维面板 |
+| `/dashboard` | GET | Web 管理面板（与 node 服务同进程） |
+| `/v1/cluster/overview` | GET | 面板数据 API |
 | `/metrics` | GET | Prometheus 指标 |
 | `/v1/cluster/overview` | GET | 集群聚合状态 |
 | `/v1/repair` | GET | 副本修复队列 |
@@ -295,7 +309,9 @@ kubectl -n memoryfs exec memoryfs-0 -- tar -czf - /data > backup-node0.tar.gz
 | `MEMORYFS_HTTP_URL` | 对外宣告的 HTTP 地址 |
 | `MEMORYFS_RAFT_URL` | 对外宣告的 Raft 地址 |
 | `MEMORYFS_REPLICA_FACTOR` | Chunk 副本数 |
-| `MEMORYFS_CHUNK_BACKEND` | disk / tiered / memory |
+| `MEMORYFS_CHUNK_BACKEND` | disk / tiered / buffered / memory |
+| `MEMORYFS_URI_PREFIX` | HTTP 路径前缀（如 `/memoryfs`） |
+| `MEMORYFS_API_TOKEN` | API Bearer Token |
 
 完整列表见 `deploy/scripts/node-start.sh`。
 
