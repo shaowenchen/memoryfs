@@ -44,7 +44,7 @@ node:
   storage:
     type: hostPath
     hostPath: /data/memoryfs
-    # Empty = random 8-digit ID on first install (stored in Secret, stable across upgrades)
+    # Empty = random 8-char [a-z0-9] ID on first install (stored in Secret, stable across upgrades)
     instanceId: ""
     hostPathType: DirectoryOrCreate
 
