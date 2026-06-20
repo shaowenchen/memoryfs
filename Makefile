@@ -49,13 +49,10 @@ benchmark:
 	go run ./cmd/benchmark -nodes http://127.0.0.1:8080 -writes 20 -reads 20 -workers 4
 
 helm-install:
-	helm upgrade --install memoryfs $(HELM_CHART) \
-		--namespace memoryfs --create-namespace \
-		--set image.tag=v$(VERSION)
-
-helm-install-local:
 	helm upgrade --install memoryfs ./deploy/helm/memoryfs \
 		--namespace memoryfs --create-namespace
+
+helm-install-local: helm-install
 
 helm-template:
 	helm template memoryfs ./deploy/helm/memoryfs

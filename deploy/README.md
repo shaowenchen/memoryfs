@@ -44,19 +44,17 @@
 ## 快速开始
 
 ```bash
-VERSION=0.1.3
-CHART="https://github.com/shaowenchen/memoryfs/releases/download/v${VERSION}/memoryfs-${VERSION}.tgz"
-
-helm upgrade --install memoryfs "${CHART}" \
+helm upgrade --install memoryfs ./deploy/helm/memoryfs \
   --namespace memoryfs --create-namespace
 ```
 
-国内集群（阿里云镜像，版本与 Release 一致）：
+国内集群（阿里云镜像）：
 
 ```bash
-helm upgrade --install memoryfs "${CHART}" \
+helm upgrade --install memoryfs ./deploy/helm/memoryfs \
   --namespace memoryfs --create-namespace \
-  --set image.repository=registry.cn-beijing.aliyuncs.com/opshub/shaowenchen-memoryfs
+  --set image.repository=registry.cn-beijing.aliyuncs.com/opshub/shaowenchen-memoryfs \
+  --set image.tag=latest
 ```
 
 查看 Pod 并打开管理面板（经 Service port-forward）：
@@ -82,10 +80,7 @@ Helm 全部可配置项见下文 **[Helm 参数参考](#helm-参数参考)**。
 启用 FUSE DaemonSet（每节点挂载）：
 
 ```bash
-VERSION=0.1.3
-CHART="https://github.com/shaowenchen/memoryfs/releases/download/v${VERSION}/memoryfs-${VERSION}.tgz"
-
-helm upgrade memoryfs "${CHART}" \
+helm upgrade memoryfs ./deploy/helm/memoryfs \
   --namespace memoryfs \
   --set mount.enabled=true \
   --set mount.hostPath=/var/lib/memoryfs
@@ -100,11 +95,8 @@ helm upgrade memoryfs "${CHART}" \
 **K8s：**
 
 ```bash
-VERSION=0.1.3
-CHART="https://github.com/shaowenchen/memoryfs/releases/download/v${VERSION}/memoryfs-${VERSION}.tgz"
-
 # 1. 增加副本数
-helm upgrade memoryfs "${CHART}" \
+helm upgrade memoryfs ./deploy/helm/memoryfs \
   --namespace memoryfs \
   --set replicaCount=5
 
@@ -123,9 +115,7 @@ kubectl -n memoryfs rollout status sts/memoryfs
 ./deploy/scripts/scale-down.sh http://n4:8080 http://n1:8080
 
 # 2. K8s 再降低 replicaCount（从最高 ordinal 开始删）
-VERSION=0.1.3
-CHART="https://github.com/shaowenchen/memoryfs/releases/download/v${VERSION}/memoryfs-${VERSION}.tgz"
-helm upgrade memoryfs "${CHART}" --namespace memoryfs --set replicaCount=3
+helm upgrade memoryfs ./deploy/helm/memoryfs --namespace memoryfs --set replicaCount=3
 
 # 3. 确认 hostPath 数据目录可保留或已备份后再缩容
 ```
@@ -237,7 +227,7 @@ kubectl -n memoryfs exec memoryfs-0 -- tar -czf - /data > backup-node0.tar.gz
 | `replicaCount` | `3` | StatefulSet 节点数 |
 | `replicaFactor` | `2` | Chunk 跨节点副本数 |
 | `image.repository` | `shaowenchen/memoryfs` | 镜像仓库 |
-| `image.tag` | `v0.1.3`（同 Chart appVersion） | 镜像标签，与 Git tag 一致 |
+| `image.tag` | `latest` | 镜像标签 |
 | `image.pullPolicy` | `Always` | 镜像拉取策略 |
 | `node.chunkBackend` | `memory` | 空值时随 `diskSync` 自动选 `memory`/`buffered` |
 | `node.diskSync.enabled` | `false` | 定时落盘开关 |
@@ -261,7 +251,7 @@ kubectl -n memoryfs exec memoryfs-0 -- tar -czf - /data > backup-node0.tar.gz
 # 各节点预先创建根目录（Chart 也会 DirectoryOrCreate）
 sudo mkdir -p /data/memoryfs
 
-helm upgrade memoryfs "${CHART}" -n memoryfs \
+helm upgrade memoryfs ./deploy/helm/memoryfs -n memoryfs \
   --set node.diskSync.enabled=true \
   --set node.diskSync.interval=30s \
   --set node.storage.type=hostPath \
@@ -318,7 +308,7 @@ helm upgrade memoryfs "${CHART}" -n memoryfs --set dashboard.uriPrefix=
 
 1. 运行测试
 2. 打包 `memoryfs-{version}.tgz` 并上传到 [GitHub Releases](https://github.com/shaowenchen/memoryfs/releases)
-3. 推送 `shaowenchen/memoryfs:v{version}` 与 `registry.cn-beijing.aliyuncs.com/opshub/shaowenchen-memoryfs:v{version}` 镜像（**不再推送 `latest`**）
+3. 推送 `shaowenchen/memoryfs:latest` 与阿里云 `.../shaowenchen-memoryfs:latest` 镜像
 
 ```bash
 git tag v0.1.3
@@ -352,7 +342,7 @@ https://github.com/shaowenchen/memoryfs/releases/download/v0.1.3/memoryfs-0.1.3.
 |------|------|
 | `PostStartHookError`（1/2） | 旧 Chart postStart 在 HTTP 未就绪时执行；升级最新 Chart（已关闭 postStart，启动时自动 ready） |
 | Pod `ContainerCreating` 卡住 | `kubectl describe pod memoryfs-0` 看 Events；节点 `mkdir -p /data/memoryfs` |
-| `ImagePullBackOff` | 确认 Release 镜像存在：`--set image.tag=v0.1.3`；国内用 ACR 同版本 tag |
+| `ImagePullBackOff` | 确认 `latest` 镜像可拉；国内用 ACR：`registry.cn-beijing.aliyuncs.com/opshub/shaowenchen-memoryfs:latest` |
 | `CrashLoopBackOff`（1/2） | `kubectl logs memoryfs-1 --previous`；升级 Chart 后 follower 会等 0 的 `/health` 再启动 |
 | `meta store: not leader` | 确保 memoryfs-0 先 Ready；`helm upgrade` 拉取含修复的新镜像 |
 | 节点 `draining` 卡住 | 检查 peer 可达；必要时 `drain?force=true` |

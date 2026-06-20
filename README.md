@@ -5,25 +5,23 @@
 ## 安装
 
 ```bash
-VERSION=0.1.3
-CHART="https://github.com/shaowenchen/memoryfs/releases/download/v${VERSION}/memoryfs-${VERSION}.tgz"
-
-helm upgrade --install memoryfs "${CHART}" \
+helm upgrade --install memoryfs ./deploy/helm/memoryfs \
   -n memoryfs --create-namespace
 ```
 
-Chart 默认镜像标签为 `v${VERSION}`（与 Release 一致）。国内集群可改用阿里云镜像：
+默认镜像：`shaowenchen/memoryfs:latest`。国内集群：
 
 ```bash
-helm upgrade --install memoryfs "${CHART}" \
+helm upgrade --install memoryfs ./deploy/helm/memoryfs \
   -n memoryfs --create-namespace \
-  --set image.repository=registry.cn-beijing.aliyuncs.com/opshub/shaowenchen-memoryfs
+  --set image.repository=registry.cn-beijing.aliyuncs.com/opshub/shaowenchen-memoryfs \
+  --set image.tag=latest
 ```
 
 启用 **定时落盘**：
 
 ```bash
-helm upgrade --install memoryfs "${CHART}" \
+helm upgrade --install memoryfs ./deploy/helm/memoryfs \
   -n memoryfs --create-namespace \
   --set node.diskSync.enabled=true
 ```

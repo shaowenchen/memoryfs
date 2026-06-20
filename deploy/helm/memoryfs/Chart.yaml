@@ -3,7 +3,7 @@ name: memoryfs
 description: Distributed memory-oriented filesystem cluster
 type: application
 version: 0.1.3
-appVersion: "v0.1.3"
+appVersion: "latest"
 home: https://github.com/shaowenchen/memoryfs
 sources:
   - https://github.com/shaowenchen/memoryfs

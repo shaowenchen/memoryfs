@@ -69,4 +69,4 @@ Prometheus：`GET /metrics`（无前缀）
 make proto build test docker-build
 ```
 
-CI：push 到 master 仅跑测试；推送 `v*` tag 时发布 `shaowenchen/memoryfs:v{version}` 镜像与 Helm Chart。
+CI：push 到 master 构建并推送 `shaowenchen/memoryfs:latest`（amd64）。

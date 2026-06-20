@@ -21,7 +21,7 @@ spec:
       hostNetwork: false
       containers:
         - name: mount
-          image: "{{ .Values.image.repository }}:{{ include "memoryfs.imageTag" . }}"
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           securityContext:
             privileged: true

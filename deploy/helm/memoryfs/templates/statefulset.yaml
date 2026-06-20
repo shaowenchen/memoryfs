@@ -34,7 +34,7 @@ spec:
       {{- end }}
       initContainers:
         - name: wait-for-bootstrap
-          image: "{{ .Values.image.repository }}:{{ include "memoryfs.imageTag" . }}"
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           command:
             - sh
@@ -48,7 +48,7 @@ spec:
               echo "memoryfs-0 is ready"
       containers:
         - name: node
-          image: "{{ .Values.image.repository }}:{{ include "memoryfs.imageTag" . }}"
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           command: ["/bin/sh", "-c"]
           args:

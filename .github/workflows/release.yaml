@@ -106,13 +106,12 @@ jobs:
         with:
           platforms: linux/amd64
           push: true
-          tags: |
-            docker.io/shaowenchen/memoryfs:${{ steps.meta.outputs.tag }}
+          tags: docker.io/shaowenchen/memoryfs:latest
           file: Dockerfile
 
       - name: Push memoryfs to aliyun
         run: |
-          export image=memoryfs:${{ steps.meta.outputs.tag }}
+          export image=memoryfs:latest
           docker run --rm -v ~/.docker/config.json:/auth.json quay.io/skopeo/stable copy \
             docker://shaowenchen/${image} \
             docker://registry.cn-beijing.aliyuncs.com/opshub/shaowenchen-${image} \
