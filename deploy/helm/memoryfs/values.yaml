@@ -63,10 +63,6 @@ node:
     enabled: true
     minAvailable: 2
 
-  # RDMA chunk transport (image must be built with -tags rdma; see deploy/README.md).
-  rdma:
-    enabled: false
-
 mount:
   enabled: false
   mountPath: /data/memoryfs

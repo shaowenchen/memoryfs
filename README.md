@@ -21,20 +21,7 @@ helm upgrade --install memoryfs \
 - `replicaFactor` — 数据副本数
 - `node.storageGB` — 每节点最大存储（GB）；Pod 内存 limit/request = storageGB+1Gi
 
-默认 **hostNetwork** 部署（HTTP/Raft/gRPC/RDMA 直接监听主机端口；每节点最多 1 个 Pod）。
-
-### RDMA（可选）
-
-启用 RDMA 传输时额外需要：
-
-```bash
---set node.rdma.enabled=true
-```
-
-- 节点有 RDMA 网卡（如 InfiniBand / RoCE），并安装相应驱动
-- Pod **`privileged: true`** + **`IPC_LOCK`** capability（注册 pinned memory）
-- 挂载 **`/dev/infiniband`**、**`/sys/class/infiniband`**
-- 镜像需 **`go build -tags rdma`** 构建（默认镜像走 gRPC/HTTP）
+默认 **hostNetwork** 部署（HTTP/Raft/gRPC/RDMA 直接监听主机端口；每节点最多 1 个 Pod）。节点有 RDMA 设备（如 InfiniBand / RoCE）时自动走 RDMA 传输，否则降级 gRPC/HTTP；Chart 已挂载 `/dev/infiniband` 并注入 `IPC_LOCK`。
 
 ## 挂载
 
@@ -50,7 +37,7 @@ docker run -it --rm --privileged \
   -f
 ```
 
-也可逗号分隔多个 seed 节点；副本数从集群 `/v1/cluster/overview` 自动读取。
+也可逗号分隔多个 nodes 节点。
 
 ## 卸载
 

@@ -61,35 +61,21 @@ podAntiAffinity:
 {{- end }}
 
 {{- define "memoryfs.nodeSecurityContext" -}}
-{{- if .Values.node.rdma.enabled }}
-privileged: true
 capabilities:
   add:
     - IPC_LOCK
 {{- end }}
-{{- end }}
 
 {{- define "memoryfs.rdmaVolumes" -}}
-{{- if .Values.node.rdma.enabled }}
 - name: infiniband-dev
   hostPath:
     path: /dev/infiniband
     type: DirectoryOrCreate
-- name: infiniband-sys
-  hostPath:
-    path: /sys/class/infiniband
-    type: Directory
-{{- end }}
 {{- end }}
 
 {{- define "memoryfs.rdmaVolumeMounts" -}}
-{{- if .Values.node.rdma.enabled }}
 - name: infiniband-dev
   mountPath: /dev/infiniband
-- name: infiniband-sys
-  mountPath: /sys/class/infiniband
-  readOnly: true
-{{- end }}
 {{- end }}
 
 {{- define "memoryfs.headless" -}}

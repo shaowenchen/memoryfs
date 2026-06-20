@@ -18,9 +18,9 @@ proto:
 
 build:
 	GO111MODULE=on CGO_ENABLED=0 GOOS=$${TARGETOS:-linux} GOARCH=$${TARGETARCH:-amd64} \
-		go build -o bin/node ./cmd/node
+		go build -tags rdma -o bin/node ./cmd/node
 	GO111MODULE=on CGO_ENABLED=0 GOOS=$${TARGETOS:-linux} GOARCH=$${TARGETARCH:-amd64} \
-		go build -o bin/mount ./cmd/mount
+		go build -tags rdma -o bin/mount ./cmd/mount
 	GO111MODULE=on CGO_ENABLED=0 GOOS=$${TARGETOS:-linux} GOARCH=$${TARGETARCH:-amd64} \
 		go build -o bin/status ./cmd/status
 	GO111MODULE=on CGO_ENABLED=0 GOOS=$${TARGETOS:-linux} GOARCH=$${TARGETARCH:-amd64} \

@@ -28,15 +28,19 @@ func NewRDMATransport(fallback ChunkTransport) *RDMATransport {
 func (t *RDMATransport) Kind() Kind { return KindRDMA }
 
 func (t *RDMATransport) PutChunk(ctx context.Context, nodeURL, chunkID string, data []byte) error {
-	if err := t.rdmaPut(normalizeRDMAFromNodeURL(nodeURL), chunkID, data); err == nil {
-		return nil
+	if RDMAAvailable() {
+		if err := t.rdmaPut(normalizeRDMAFromNodeURL(nodeURL), chunkID, data); err == nil {
+			return nil
+		}
 	}
 	return t.fallback.PutChunk(ctx, nodeURL, chunkID, data)
 }
 
 func (t *RDMATransport) GetChunk(ctx context.Context, nodeURL, chunkID string) ([]byte, error) {
-	if data, err := t.rdmaGet(normalizeRDMAFromNodeURL(nodeURL), chunkID); err == nil {
-		return data, nil
+	if RDMAAvailable() {
+		if data, err := t.rdmaGet(normalizeRDMAFromNodeURL(nodeURL), chunkID); err == nil {
+			return data, nil
+		}
 	}
 	return t.fallback.GetChunk(ctx, nodeURL, chunkID)
 }

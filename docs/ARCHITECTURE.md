@@ -86,11 +86,7 @@ grpcurl -plaintext 127.0.0.1:9090 memoryfs.v1.MemoryFS/Health
 
 ### RDMA
 
-默认构建下降级为 gRPC。Linux 可用 `-tags rdma` 编译优化传输：
-
-```bash
-go build -tags rdma -o bin/node ./cmd/node
-```
+镜像默认带 `rdma` 构建标签。启动时检测 `/dev/infiniband/uverbs*`，有设备则走 RDMA，否则自动降级 gRPC/HTTP。Helm Chart 默认挂载 `/dev/infiniband` 并注入 `IPC_LOCK`。
 
 ## 传输优先级
 
