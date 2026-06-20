@@ -26,7 +26,7 @@ helm upgrade --install memoryfs \
 默认挂载目录 **`/mnt/memoryfs`**。`-nodes` **填任意一个可达节点**即可（如 node3）；chunk 在其它节点时，该节点会向 peer 拉取后再返回。
 
 ```bash
-docker run -it --rm --privileged \
+nerdctl run -it --rm --privileged \
   -v /mnt/memoryfs:/mnt/memoryfs \
   --network host \
   shaowenchen/memoryfs:latest \
