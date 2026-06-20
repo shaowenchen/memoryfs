@@ -71,7 +71,7 @@ spec:
             - name: MEMORYFS_GC_INTERVAL
               value: {{ .Values.node.gcInterval | quote }}
             - name: MEMORYFS_FLUSH_INTERVAL
-              value: {{ .Values.node.flushInterval | quote }}
+              value: {{ include "memoryfs.flushInterval" . | quote }}
             - name: MEMORYFS_DEFAULT_TTL
               value: {{ .Values.node.defaultTTL | quote }}
             - name: MEMORYFS_MAX_FILE_AGE

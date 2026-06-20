@@ -4,7 +4,7 @@
 
 ## 安装
 
-默认：**emptyDir**（Pod 重启数据不保留）、Chunk **memory** 后端。
+默认纯内存 Chunk，**不定时落盘**。
 
 ```bash
 VERSION=0.1.0
@@ -15,21 +15,20 @@ helm upgrade --install memoryfs "${CHART}" \
   --set image.tag="v${VERSION}"
 ```
 
-启用 **PVC 落盘**（生产推荐）：
+启用 **定时落盘**（按间隔将 Chunk sync 到节点本地磁盘，重启前也会落盘）：
 
 ```bash
 helm upgrade --install memoryfs "${CHART}" \
   -n memoryfs --create-namespace \
   --set image.tag="v${VERSION}" \
-  --set node.persistence.enabled=true \
-  --set node.persistence.size=100Gi
+  --set node.diskSync.enabled=true
 ```
 
 ## 卸载
 
 ```bash
 helm uninstall memoryfs -n memoryfs
-kubectl delete namespace memoryfs   # 可选；启用 PVC 时会删除持久化数据
+kubectl delete namespace memoryfs   # 可选
 ```
 
 ## 文档

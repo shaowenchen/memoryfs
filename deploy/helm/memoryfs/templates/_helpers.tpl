@@ -55,10 +55,18 @@ component: node
 {{- $backend := .Values.node.chunkBackend -}}
 {{- if $backend -}}
 {{- $backend -}}
-{{- else if .Values.node.persistence.enabled -}}
-tiered
+{{- else if .Values.node.diskSync.enabled -}}
+buffered
 {{- else -}}
 memory
+{{- end -}}
+{{- end }}
+
+{{- define "memoryfs.flushInterval" -}}
+{{- if .Values.node.diskSync.enabled -}}
+{{- .Values.node.diskSync.interval -}}
+{{- else -}}
+0
 {{- end -}}
 {{- end }}
 
