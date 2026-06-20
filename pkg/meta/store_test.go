@@ -2,6 +2,7 @@ package meta_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/shaowenchen/memoryfs/pkg/kv"
@@ -51,6 +52,26 @@ func TestLocalStoreSymlink(t *testing.T) {
 	}
 	if attr.Target != "/etc/passwd" {
 		t.Fatalf("target: %q", attr.Target)
+	}
+}
+
+type nonLeaderKV struct {
+	*kv.MemoryKV
+}
+
+func (nonLeaderKV) IsLeader() bool { return false }
+
+func (n nonLeaderKV) Batch(ops []kv.Op) error {
+	return fmt.Errorf("not leader")
+}
+
+func TestNewLocalStoreSkipsRootOnFollower(t *testing.T) {
+	store, err := meta.NewLocalStore(nonLeaderKV{MemoryKV: kv.NewMemoryKV()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.GetAttr(context.Background(), meta.RootIno()); err == nil {
+		t.Fatal("expected root missing on follower before replication")
 	}
 }
 

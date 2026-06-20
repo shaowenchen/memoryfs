@@ -146,12 +146,7 @@ func main() {
 	pb.RegisterMemoryFSServer(grpcSrv, grpcserver.New(svc))
 
 	if *join != "" {
-		go func() {
-			time.Sleep(time.Second)
-			if err := joinCluster(*join, *id, raftAdvertise, httpURL, *grpcAddr, *rdmaAddr); err != nil {
-				log.Printf("warning: join cluster: %v", err)
-			}
-		}()
+		go joinClusterWithRetry(*join, *id, raftAdvertise, httpURL, *grpcAddr, *rdmaAddr)
 	}
 
 	go serveHTTP(*httpAddr, httpSrv.Handler(), &httpServer)
@@ -208,6 +203,27 @@ func normalizeHTTP(addr string) string {
 		return "http://127.0.0.1" + addr
 	}
 	return "http://" + addr
+}
+
+func joinClusterWithRetry(leaderURL, id, raftAddr, httpAddr, grpcAddr, rdmaAddr string) {
+	const maxAttempts = 60
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		time.Sleep(time.Duration(min(attempt, 5)) * time.Second)
+		if err := joinCluster(leaderURL, id, raftAddr, httpAddr, grpcAddr, rdmaAddr); err != nil {
+			log.Printf("join cluster attempt %d/%d: %v", attempt, maxAttempts, err)
+			continue
+		}
+		log.Printf("joined cluster via %s as %s", leaderURL, id)
+		return
+	}
+	log.Printf("join cluster failed after %d attempts", maxAttempts)
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 func joinCluster(leaderURL, id, raftAddr, httpAddr, grpcAddr, rdmaAddr string) error {

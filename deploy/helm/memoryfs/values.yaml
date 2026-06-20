@@ -44,7 +44,7 @@ node:
     accessModes:
       - ReadWriteOnce
 
-  podManagementPolicy: Parallel
+  podManagementPolicy: OrderedReady
   updateStrategy: RollingUpdate
 
   # Lifecycle hooks for safe rolling updates.

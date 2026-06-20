@@ -90,6 +90,10 @@ func (s *LocalStore) initRoot(ctx context.Context) error {
 	if exists {
 		return nil
 	}
+	// Followers receive root metadata via Raft replication after join.
+	if lc, ok := s.kv.(interface{ IsLeader() bool }); ok && !lc.IsLeader() {
+		return nil
+	}
 	root := &Attr{
 		Ino:   rootIno,
 		Mode:  0o040755,

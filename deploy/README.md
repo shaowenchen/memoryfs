@@ -381,6 +381,8 @@ https://github.com/shaowenchen/memoryfs/releases/download/v0.1.0/memoryfs-0.1.0.
 
 | 现象 | 处理 |
 |------|------|
+| `ImagePullBackOff` | 确认镜像存在：优先 `--set image.tag=latest`；国内可用 ACR 镜像 |
+| `meta store: not leader` | 确保 memoryfs-0 先 Ready；`helm upgrade` 拉取含修复的新镜像 |
 | 节点 `draining` 卡住 | 检查 peer 可达；必要时 `drain?force=true` |
 | chunk 缺失 | `node-rebuild.sh` 或 restart（自动 ready） |
 | Raft 无 leader | 保证 quorum 节点在线；检查 8081 互通 |
