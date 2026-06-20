@@ -30,25 +30,17 @@ helm upgrade --install memoryfs \
 ```bash
 mkdir -p /mnt/memoryfs
 
-nerdctl pull docker.io/shaowenchen/memoryfs:latest
-```
-
-```bash
 nerdctl run -it --rm --privileged \
   --device /dev/fuse \
   -v /mnt/memoryfs:/mnt/memoryfs:shared \
   --network host \
-  docker.io/shaowenchen/memoryfs:latest \
+  shaowenchen/memoryfs:latest \
   mount -mount /mnt/memoryfs \
   -nodes http://10.0.0.3:8080 \
   -f
 ```
 
-- `--device /dev/fuse`：FUSE 必需
-- `:shared`：容器内挂载对宿主机 `/mnt/memoryfs` 可见
-- 也可逗号分隔多个 nodes 节点
-
-拉镜像若报 `text/html`，说明 registry 返回了错误页（网络/限流），先单独 `nerdctl pull docker.io/shaowenchen/memoryfs:latest` 排查；或在已能拉取该镜像的节点上 `nerdctl save` / `load`。
+也可逗号分隔多个 nodes 节点。
 
 ## 卸载
 
