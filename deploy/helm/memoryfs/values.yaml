@@ -54,7 +54,7 @@ node:
   # Lifecycle hooks for safe rolling updates.
   lifecycle:
     preStopDrain: true
-    postStartReady: true
+    postStartReady: false
 
   podDisruptionBudget:
     enabled: true

@@ -242,6 +242,7 @@ kubectl -n memoryfs exec memoryfs-0 -- tar -czf - /data > backup-node0.tar.gz
 | `node.storage.instanceId` | 随机 8 位 `[a-z0-9]` | 首次安装自动生成并写入 Secret；升级不变 |
 | `node.gcInterval` | `5m` | 孤儿 chunk GC 间隔 |
 | `node.diskQuotaGB` | `0` | 本地磁盘配额（落盘开启时可设限） |
+| `node.lifecycle.postStartReady` | `false` | 已关闭（节点进程启动时自动 ready；postStart 易与等待 0 号冲突） |
 | `node.lifecycle.preStopDrain` | `true` | 缩容/重启前 drain |
 | `node.podManagementPolicy` | `OrderedReady` | 按序启动：pod-0 Ready 后再起 pod-1、pod-2 |
 | `dashboard.uriPrefix` | `/memoryfs` | 管理面板与 HTTP API 路径前缀 |
@@ -345,9 +346,10 @@ https://github.com/shaowenchen/memoryfs/releases/download/v0.1.0/memoryfs-0.1.0.
 
 | 现象 | 处理 |
 |------|------|
-| Pod `ContainerCreating` 卡住 | 看 Events：`FailedMount` 检查节点 `/data/memoryfs` 是否存在；升级最新 Chart 后由启动脚本自动 mkdir |
+| `PostStartHookError`（1/2） | 旧 Chart postStart 在 HTTP 未就绪时执行；升级最新 Chart（已关闭 postStart，启动时自动 ready） |
+| Pod `ContainerCreating` 卡住 | `kubectl describe pod memoryfs-0` 看 Events；节点 `mkdir -p /data/memoryfs` |
 | `ImagePullBackOff` | 确认镜像存在：优先 `--set image.tag=latest`；国内可用 ACR 镜像 |
-| `CrashLoopBackOff`（1/2） | 先看 `kubectl logs memoryfs-1`；升级最新 Chart 后 follower 会等 0 的 `/health` 再启动 |
+| `CrashLoopBackOff`（1/2） | `kubectl logs memoryfs-1 --previous`；升级 Chart 后 follower 会等 0 的 `/health` 再启动 |
 | `meta store: not leader` | 确保 memoryfs-0 先 Ready；`helm upgrade` 拉取含修复的新镜像 |
 | 节点 `draining` 卡住 | 检查 peer 可达；必要时 `drain?force=true` |
 | chunk 缺失 | `node-rebuild.sh` 或 restart（自动 ready） |
