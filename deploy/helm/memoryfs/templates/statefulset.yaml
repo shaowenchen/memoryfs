@@ -32,6 +32,20 @@ spec:
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      initContainers:
+        - name: wait-for-bootstrap
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command:
+            - sh
+            - -c
+            - |
+              ORD="${HOSTNAME##*-}"
+              if [ "$ORD" = "0" ]; then exit 0; fi
+              BOOT0="http://{{ include "memoryfs.fullname" . }}-0.{{ include "memoryfs.headless" . }}:{{ .Values.service.httpPort }}"
+              echo "waiting for ${BOOT0}/health ..."
+              until curl -sf "${BOOT0}/health" >/dev/null; do sleep 2; done
+              echo "memoryfs-0 is ready"
       containers:
         - name: node
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"

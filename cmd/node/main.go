@@ -85,9 +85,23 @@ func main() {
 	}
 	defer func() { _ = rn.Close() }()
 
+	if *join != "" {
+		if err := joinClusterBlocking(*join, *id, raftAdvertise, httpURL, *grpcAddr, *rdmaAddr); err != nil {
+			log.Fatalf("join cluster: %v", err)
+		}
+	}
+	if *bootstrap && !*standalone {
+		waitForRaftLeader(rn, 30*time.Second)
+	}
+
 	metaStore, err := meta.NewLocalStore(rn.KV())
 	if err != nil {
 		log.Fatalf("meta store: %v", err)
+	}
+	if rn.IsLeader() || *standalone {
+		if err := metaStore.EnsureRoot(context.Background()); err != nil {
+			log.Fatalf("meta store root: %v", err)
+		}
 	}
 
 	chunkStore, err := chunk.OpenStoreWithOptions(chunk.OpenStoreOptions{
@@ -145,10 +159,6 @@ func main() {
 	grpcSrv := grpc.NewServer(grpc.MaxRecvMsgSize(16<<20), grpc.MaxSendMsgSize(16<<20))
 	pb.RegisterMemoryFSServer(grpcSrv, grpcserver.New(svc))
 
-	if *join != "" {
-		go joinClusterWithRetry(*join, *id, raftAdvertise, httpURL, *grpcAddr, *rdmaAddr)
-	}
-
 	go serveHTTP(*httpAddr, httpSrv.Handler(), &httpServer)
 	go serveGRPC(*grpcAddr, grpcSrv)
 
@@ -205,18 +215,19 @@ func normalizeHTTP(addr string) string {
 	return "http://" + addr
 }
 
-func joinClusterWithRetry(leaderURL, id, raftAddr, httpAddr, grpcAddr, rdmaAddr string) {
+func joinClusterBlocking(leaderURL, id, raftAddr, httpAddr, grpcAddr, rdmaAddr string) error {
 	const maxAttempts = 60
+	var lastErr error
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
-		time.Sleep(time.Duration(min(attempt, 5)) * time.Second)
-		if err := joinCluster(leaderURL, id, raftAddr, httpAddr, grpcAddr, rdmaAddr); err != nil {
-			log.Printf("join cluster attempt %d/%d: %v", attempt, maxAttempts, err)
-			continue
+		lastErr = joinCluster(leaderURL, id, raftAddr, httpAddr, grpcAddr, rdmaAddr)
+		if lastErr == nil {
+			log.Printf("joined cluster via %s as %s", leaderURL, id)
+			return nil
 		}
-		log.Printf("joined cluster via %s as %s", leaderURL, id)
-		return
+		log.Printf("join cluster attempt %d/%d: %v", attempt, maxAttempts, lastErr)
+		time.Sleep(time.Duration(min(attempt, 5)) * time.Second)
 	}
-	log.Printf("join cluster failed after %d attempts", maxAttempts)
+	return fmt.Errorf("after %d attempts: %w", maxAttempts, lastErr)
 }
 
 func min(a, b int) int {
@@ -224,6 +235,17 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+func waitForRaftLeader(rn *raftnode.Node, timeout time.Duration) {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if rn.IsLeader() {
+			return
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	log.Printf("warning: timed out waiting for raft leadership")
 }
 
 func joinCluster(leaderURL, id, raftAddr, httpAddr, grpcAddr, rdmaAddr string) error {

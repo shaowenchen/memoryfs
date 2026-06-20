@@ -90,7 +90,6 @@ func (s *LocalStore) initRoot(ctx context.Context) error {
 	if exists {
 		return nil
 	}
-	// Followers receive root metadata via Raft replication after join.
 	if lc, ok := s.kv.(interface{ IsLeader() bool }); ok && !lc.IsLeader() {
 		return nil
 	}
@@ -106,11 +105,26 @@ func (s *LocalStore) initRoot(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	return s.kv.Batch([]kv.Op{
+	if err := s.kv.Batch([]kv.Op{
 		{Type: kv.OpSet, Key: inoKey(rootIno), Value: data},
 		{Type: kv.OpIncr, Key: nextInoKey()},
 		{Type: kv.OpSAdd, Key: inodeIndexKey, Member: strconv.FormatUint(rootIno, 10)},
-	})
+	}); err != nil {
+		if isNotLeaderErr(err) {
+			return nil
+		}
+		return err
+	}
+	return nil
+}
+
+func isNotLeaderErr(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "not leader")
+}
+
+// EnsureRoot creates the root inode when this node is the raft leader.
+func (s *LocalStore) EnsureRoot(ctx context.Context) error {
+	return s.initRoot(ctx)
 }
 
 func inoKey(ino uint64) string          { return fmt.Sprintf("%s:ino:%d", keyPrefix, ino) }

@@ -78,16 +78,10 @@ memory
 ORD="${HOSTNAME##*-}"
 export MEMORYFS_ID="${HOSTNAME}"
 export MEMORYFS_HEADLESS_SERVICE="{{ include "memoryfs.headless" . }}"
-BOOT0="http://{{ include "memoryfs.fullname" . }}-0.{{ include "memoryfs.headless" . }}:{{ .Values.service.httpPort }}"
 if [ "$ORD" = "0" ]; then
   export MEMORYFS_BOOTSTRAP=true
 else
-  export MEMORYFS_JOIN="${BOOT0}"
-  echo "waiting for ${BOOT0}/health ..."
-  until curl -sf "${BOOT0}/health" >/dev/null; do
-    sleep 2
-  done
-  echo "memoryfs-0 is ready, starting ${HOSTNAME}"
+  export MEMORYFS_JOIN="http://{{ include "memoryfs.fullname" . }}-0.{{ include "memoryfs.headless" . }}:{{ .Values.service.httpPort }}"
 fi
 exec /app/entrypoint.sh node-env
 {{- end }}
