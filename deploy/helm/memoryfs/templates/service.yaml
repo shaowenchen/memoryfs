@@ -19,6 +19,9 @@ spec:
     - name: raft
       port: {{ .Values.service.raftPort }}
       targetPort: raft
+    - name: rdma
+      port: {{ .Values.service.rdmaPort }}
+      targetPort: rdma
 ---
 apiVersion: v1
 kind: Service

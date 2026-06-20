@@ -21,23 +21,36 @@ helm upgrade --install memoryfs \
 - `replicaFactor` — 数据副本数
 - `node.storageGB` — 每节点最大存储（GB）；Pod 内存 limit/request = storageGB+1Gi
 
-## 挂载
+默认 **hostNetwork** 部署（HTTP/Raft/gRPC/RDMA 直接监听主机端口；每节点最多 1 个 Pod）。
 
-默认挂载目录 **`/data/memoryfs`**。本机 FUSE（需 `--privileged` 与 `/dev/fuse`）：
+### RDMA（可选）
+
+启用 RDMA 传输时额外需要：
 
 ```bash
-kubectl -n memoryfs port-forward svc/memoryfs 8080:8080
+--set node.rdma.enabled=true
+```
 
+- 节点有 RDMA 网卡（如 InfiniBand / RoCE），并安装相应驱动
+- Pod **`privileged: true`** + **`IPC_LOCK`** capability（注册 pinned memory）
+- 挂载 **`/dev/infiniband`**、**`/sys/class/infiniband`**
+- 镜像需 **`go build -tags rdma`** 构建（默认镜像走 gRPC/HTTP）
+
+## 挂载
+
+默认挂载目录 **`/data/memoryfs`**。`-nodes` **填任意一个可达节点**即可（如 node3）；chunk 在其它节点时，该节点会向 peer 拉取后再返回。
+
+```bash
 docker run -it --rm --privileged \
   -v /data/memoryfs:/data/memoryfs \
   --network host \
   shaowenchen/memoryfs:latest \
   mount -mount /data/memoryfs \
-  -nodes http://127.0.0.1:8080 \
-  -replica-factor 2 -f
+  -nodes http://10.0.0.3:8080 \
+  -f
 ```
 
-`-nodes` 填任意一个可达节点或 Service 即可；`-replica-factor` 与 `replicaFactor` 一致。
+也可逗号分隔多个 seed 节点；副本数从集群 `/v1/cluster/overview` 自动读取。
 
 ## 卸载
 

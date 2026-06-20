@@ -22,7 +22,8 @@ spec:
       nodeSelector:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      hostNetwork: false
+      hostNetwork: {{ .Values.hostNetwork }}
+      dnsPolicy: {{ .Values.dnsPolicy }}
       containers:
         - name: mount
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
@@ -37,8 +38,6 @@ spec:
             - {{ .Values.mount.mountPath | quote }}
             - -nodes
             - {{ include "memoryfs.nodeURLs" . | quote }}
-            - -replica-factor
-            - {{ .Values.mount.replicaFactor | quote }}
             - -f
           volumeMounts:
             - name: fuse

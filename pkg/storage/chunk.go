@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 
 	"github.com/shaowenchen/memoryfs/pkg/chunk"
@@ -35,18 +36,34 @@ func NewChunkStore(metaStore meta.Backend, nodes []string, replicaFactor int) *C
 	}
 }
 
-// RefreshNodes reloads node list from metadata.
+// RefreshNodes merges cluster-registered nodes with any configured seed URLs.
 func (c *ChunkStore) RefreshNodes(ctx context.Context) error {
 	registered, err := c.meta.ListNodes(ctx)
-	if err != nil {
-		return err
-	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if len(registered) > 0 {
-		c.nodes = registered
+	c.nodes = mergeNodeURLs(c.nodes, registered)
+	return err
+}
+
+func mergeNodeURLs(existing, discovered []string) []string {
+	seen := make(map[string]struct{}, len(existing)+len(discovered))
+	out := make([]string, 0, len(existing)+len(discovered))
+	add := func(list []string) {
+		for _, n := range list {
+			n = strings.TrimSpace(n)
+			if n == "" {
+				continue
+			}
+			if _, ok := seen[n]; ok {
+				continue
+			}
+			seen[n] = struct{}{}
+			out = append(out, n)
+		}
 	}
-	return nil
+	add(existing)
+	add(discovered)
+	return out
 }
 
 // Nodes returns current node URLs.
@@ -60,6 +77,14 @@ func (c *ChunkStore) Nodes() []string {
 
 func (c *ChunkStore) selectNodes(chunkID string, rf int) ([]string, error) {
 	return chunk.SelectNodes(c.Nodes(), chunkID, rf)
+}
+
+func (c *ChunkStore) nodesForChunk(chunkID string) []string {
+	primary, err := c.selectNodes(chunkID, c.replicaFactor)
+	if err != nil {
+		return c.Nodes()
+	}
+	return mergeNodeURLs(primary, c.Nodes())
 }
 
 // Read reads up to len(dest) bytes at offset from a file identified by attr.
@@ -161,9 +186,9 @@ func (c *ChunkStore) DeleteChunks(ctx context.Context, attr *meta.Attr) {
 }
 
 func (c *ChunkStore) readChunk(ctx context.Context, chunkID string) ([]byte, error) {
-	nodes, err := c.selectNodes(chunkID, c.replicaFactor)
-	if err != nil {
-		return nil, err
+	nodes := c.nodesForChunk(chunkID)
+	if len(nodes) == 0 {
+		return nil, ErrNoNodes
 	}
 	var last error
 	for _, node := range nodes {
@@ -177,9 +202,9 @@ func (c *ChunkStore) readChunk(ctx context.Context, chunkID string) ([]byte, err
 }
 
 func (c *ChunkStore) writeChunk(ctx context.Context, chunkID string, data []byte) error {
-	nodes, err := c.selectNodes(chunkID, c.replicaFactor)
-	if err != nil {
-		return err
+	nodes := c.nodesForChunk(chunkID)
+	if len(nodes) == 0 {
+		return ErrNoNodes
 	}
 	var last error
 	for _, node := range nodes {
@@ -193,11 +218,19 @@ func (c *ChunkStore) writeChunk(ctx context.Context, chunkID string, data []byte
 }
 
 func (c *ChunkStore) deleteChunk(ctx context.Context, chunkID string) error {
-	nodes, err := c.selectNodes(chunkID, 1)
-	if err != nil {
-		return err
+	nodes := c.nodesForChunk(chunkID)
+	if len(nodes) == 0 {
+		return ErrNoNodes
 	}
-	return c.transport.DeleteChunk(ctx, nodes[0], chunkID)
+	var last error
+	for _, node := range nodes {
+		err := c.transport.DeleteChunk(ctx, node, chunkID)
+		if err == nil {
+			return nil
+		}
+		last = err
+	}
+	return last
 }
 
 func chunkIDFor(attr *meta.Attr, idx int) string {

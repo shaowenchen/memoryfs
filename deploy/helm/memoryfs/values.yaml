@@ -1,6 +1,10 @@
 # Default values for MemoryFS Helm chart.
 # User-facing knobs: replicaCount, replicaFactor, node.storageGB.
 
+# Use host network (required for RDMA; one pod per node via anti-affinity).
+hostNetwork: true
+dnsPolicy: ClusterFirstWithHostNet
+
 replicaCount: 3
 
 image:
@@ -59,11 +63,14 @@ node:
     enabled: true
     minAvailable: 2
 
+  # RDMA chunk transport (image must be built with -tags rdma; see deploy/README.md).
+  rdma:
+    enabled: false
+
 mount:
   enabled: false
   mountPath: /data/memoryfs
   hostPath: /data/memoryfs
-  replicaFactor: 2
 
 metrics:
   enabled: false
@@ -79,6 +86,7 @@ service:
   httpPort: 8080
   grpcPort: 9090
   raftPort: 8081
+  rdmaPort: 9092
 
 nodeSelector:
   memoryfs.io/node: "true"

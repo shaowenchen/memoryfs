@@ -60,6 +60,38 @@ podAntiAffinity:
 {{- end -}}
 {{- end }}
 
+{{- define "memoryfs.nodeSecurityContext" -}}
+{{- if .Values.node.rdma.enabled }}
+privileged: true
+capabilities:
+  add:
+    - IPC_LOCK
+{{- end }}
+{{- end }}
+
+{{- define "memoryfs.rdmaVolumes" -}}
+{{- if .Values.node.rdma.enabled }}
+- name: infiniband-dev
+  hostPath:
+    path: /dev/infiniband
+    type: DirectoryOrCreate
+- name: infiniband-sys
+  hostPath:
+    path: /sys/class/infiniband
+    type: Directory
+{{- end }}
+{{- end }}
+
+{{- define "memoryfs.rdmaVolumeMounts" -}}
+{{- if .Values.node.rdma.enabled }}
+- name: infiniband-dev
+  mountPath: /dev/infiniband
+- name: infiniband-sys
+  mountPath: /sys/class/infiniband
+  readOnly: true
+{{- end }}
+{{- end }}
+
 {{- define "memoryfs.headless" -}}
 {{- printf "%s-headless" (include "memoryfs.fullname" .) }}
 {{- end }}
@@ -110,11 +142,12 @@ exec /app/entrypoint.sh node-env
 {{- define "memoryfs.nodeURLs" -}}
 {{- $fullname := include "memoryfs.fullname" . -}}
 {{- $headless := include "memoryfs.headless" . -}}
+{{- $ns := .Release.Namespace -}}
 {{- $port := .Values.service.httpPort -}}
 {{- $prefix := .Values.dashboard.uriPrefix | default "" -}}
 {{- $count := int .Values.replicaCount -}}
 {{- range $i, $e := until $count -}}
 {{- if $i }},{{ end -}}
-http://{{ $fullname }}-{{ $i }}.{{ $headless }}:{{ $port }}{{ $prefix }}
+http://{{ $fullname }}-{{ $i }}.{{ $headless }}.{{ $ns }}.svc:{{ $port }}{{ $prefix }}
 {{- end -}}
 {{- end }}

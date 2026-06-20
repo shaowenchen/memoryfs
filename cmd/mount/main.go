@@ -15,14 +15,15 @@ import (
 	"github.com/hanwen/go-fuse/v2/fuse"
 
 	"github.com/shaowenchen/memoryfs/pkg/client"
+	"github.com/shaowenchen/memoryfs/pkg/cli"
+	"github.com/shaowenchen/memoryfs/pkg/chunk"
 	"github.com/shaowenchen/memoryfs/pkg/fusefs"
 	"github.com/shaowenchen/memoryfs/pkg/storage"
 )
 
 func main() {
 	mountPoint := flag.String("mount", "", "mount point (required)")
-	nodes := flag.String("nodes", "", "comma-separated node HTTP URLs (required)")
-	replicaFactor := flag.Int("replica-factor", 2, "chunk replication factor")
+	nodes := flag.String("nodes", envOr("MEMORYFS_NODES", ""), "comma-separated node HTTP URLs (required)")
 	foreground := flag.Bool("f", false, "run in foreground")
 	debug := flag.Bool("debug", false, "enable fuse debug")
 	flag.Parse()
@@ -44,15 +45,16 @@ func main() {
 	metaStore := client.NewRemoteMeta(nodeList)
 	defer func() { _ = metaStore.Close() }()
 
-	chunks := storage.NewChunkStore(metaStore, metaStore.Nodes(), *replicaFactor)
+	rf := detectReplicaFactor(nodeList)
+	chunks := storage.NewChunkStore(metaStore, nodeList, rf)
 	if err := chunks.RefreshNodes(context.Background()); err != nil {
 		log.Printf("warning: refresh nodes: %v", err)
 	}
 	if len(chunks.Nodes()) == 0 {
-		log.Printf("using configured nodes: %v", nodeList)
-	} else {
-		log.Printf("using nodes: %v", chunks.Nodes())
+		log.Fatal("no cluster nodes available; check -nodes URLs")
 	}
+	log.Printf("replica factor: %d (from cluster)", rf)
+	log.Printf("using nodes: %v", chunks.Nodes())
 
 	uid := uint32(syscall.Getuid())
 	gid := uint32(syscall.Getgid())
@@ -84,4 +86,26 @@ func main() {
 	}
 
 	server.Wait()
+}
+
+func envOr(key, fallback string) string {
+	if v := strings.TrimSpace(os.Getenv(key)); v != "" {
+		return v
+	}
+	return fallback
+}
+
+func detectReplicaFactor(nodes []string) int {
+	if len(nodes) == 0 {
+		return chunk.DefaultReplicaFactor
+	}
+	seed := strings.TrimRight(strings.TrimSpace(nodes[0]), "/")
+	prefix := cli.DetectPrefix(context.Background(), seed, "")
+	c := cli.NewClient(seed, prefix, "")
+	ov, err := c.Overview(context.Background())
+	if err != nil || ov.ReplicaFactor <= 0 {
+		log.Printf("warning: detect replica factor: %v; using default %d", err, chunk.DefaultReplicaFactor)
+		return chunk.DefaultReplicaFactor
+	}
+	return ov.ReplicaFactor
 }

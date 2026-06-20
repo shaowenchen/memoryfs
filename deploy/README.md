@@ -61,18 +61,35 @@ helm upgrade --install memoryfs "${CHART}" \
 - `replicaFactor` — 数据副本数
 - `node.storageGB` — 每节点最大存储（GB）；Pod 内存 = storageGB+1Gi
 
-### 挂载
+默认 **hostNetwork: true**（`dnsPolicy: ClusterFirstWithHostNet`），节点间用 **主机 IP** 宣告地址；端口见 `service.httpPort/grpcPort/raftPort/rdmaPort`（8080/9090/8081/9092）。
 
-默认挂载目录 **`/data/memoryfs`**。本机 FUSE：
+### RDMA
 
 ```bash
-kubectl -n memoryfs port-forward svc/memoryfs 8080:8080
-
-docker run -it --rm --privileged \
-  -v /data/memoryfs:/data/memoryfs --network host \
-  shaowenchen/memoryfs:latest \
-  mount -mount /data/memoryfs -nodes http://127.0.0.1:8080 -replica-factor 2 -f
+helm upgrade memoryfs "${CHART}" -n memoryfs \
+  --set node.rdma.enabled=true \
+  ...
 ```
+
+| 项 | 说明 |
+|----|------|
+| 网络 | hostNetwork（已默认） |
+| 权限 | `privileged: true`、`IPC_LOCK`（Chart 自动注入） |
+| 设备 | hostPath 挂载 `/dev/infiniband`、`/sys/class/infiniband` |
+| 镜像 | 需 `-tags rdma` 编译；未启用时自动降级 gRPC → HTTP |
+| 节点 | 仅调度到有 RDMA 设备的节点（可配合 `nodeSelector`） |
+
+### 挂载
+
+默认目录 **`/data/memoryfs`**。只连 **一个节点** 即可（数据在其它节点时，该节点 HTTP `/chunks/` 会向 peer 拉取）：
+
+```bash
+mount -mount /data/memoryfs \
+  -nodes http://10.0.0.3:8080 \
+  -f
+```
+
+副本数从集群自动读取，无需 `-replica-factor`。
 
 扩容：为新节点打标签 `memoryfs.io/node=true`，再 `helm upgrade` 增大 `replicaCount`（可同时改 `node.storageGB`）。
 
@@ -248,6 +265,8 @@ kubectl -n memoryfs exec memoryfs-0 -- tar -czf - /data > backup-node0.tar.gz
 | **`replicaCount`** | `3` | **集群节点数** |
 | **`replicaFactor`** | `2` | **数据副本数**（chunk 跨节点复制份数） |
 | **`node.storageGB`** | `3` | **每节点最大存储（GB）**；Pod 内存自动为 storageGB+1Gi |
+| `hostNetwork` | `true` | 主机网络；节点用 hostIP 宣告地址 |
+| `node.rdma.enabled` | `false` | RDMA：`privileged` + `IPC_LOCK` + InfiniBand 设备挂载 |
 | `nodeSelector` | `memoryfs.io/node: "true"` | 仅调度到已打标签的节点 |
 | `image.repository` | `shaowenchen/memoryfs` | 镜像仓库 |
 | `image.tag` | `latest` | 镜像标签 |
@@ -366,6 +385,6 @@ helm upgrade --install memoryfs "${CHART}" -n memoryfs --create-namespace
 | chunk 缺失 | `node-rebuild.sh` 或 restart（自动 ready） |
 | Raft 无 leader | 保证 quorum 节点在线；检查 8081 互通 |
 | 磁盘满 | 调整 quota；`-max-file-age`；手动 GC |
-| 扩容后 mount 不可见新节点 | 更新 mount `-nodes` 列表或 helm upgrade mount |
+| 扩容后 mount 不可见新节点 | 重启 mount 或换 seed 节点；客户端启动时会刷新 `/v1/cluster/nodes` |
 
 更多场景见 [docs/USECASES.md](../docs/USECASES.md)。

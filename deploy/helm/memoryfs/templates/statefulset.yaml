@@ -19,6 +19,8 @@ spec:
         {{- include "memoryfs.selectorLabels" . | nindent 8 }}
         memoryfs.io/role: node
     spec:
+      hostNetwork: {{ .Values.hostNetwork }}
+      dnsPolicy: {{ .Values.dnsPolicy }}
       serviceAccountName: {{ include "memoryfs.serviceAccountName" . }}
       terminationGracePeriodSeconds: 60
       {{- with .Values.nodeSelector }}
@@ -60,7 +62,13 @@ spec:
               containerPort: {{ .Values.service.grpcPort }}
             - name: raft
               containerPort: {{ .Values.service.raftPort }}
+            - name: rdma
+              containerPort: {{ .Values.service.rdmaPort }}
           env:
+            - name: MEMORYFS_HOST_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.hostIP
             - name: POD_NAME
               valueFrom:
                 fieldRef:
@@ -101,6 +109,14 @@ spec:
               value: {{ .Values.node.maxFileAge | quote }}
             - name: MEMORYFS_HEADLESS_SERVICE
               value: {{ include "memoryfs.headless" . }}
+            - name: MEMORYFS_HTTP_LISTEN
+              value: ":{{ .Values.service.httpPort }}"
+            - name: MEMORYFS_GRPC_LISTEN
+              value: ":{{ .Values.service.grpcPort }}"
+            - name: MEMORYFS_RDMA_LISTEN
+              value: ":{{ .Values.service.rdmaPort }}"
+            - name: MEMORYFS_RAFT_LISTEN
+              value: ":{{ .Values.service.raftPort }}"
             {{- if .Values.apiToken }}
             - name: MEMORYFS_API_TOKEN
               value: {{ .Values.apiToken | quote }}
@@ -127,6 +143,10 @@ spec:
               port: http
             initialDelaySeconds: 20
             periodSeconds: 20
+          {{- with include "memoryfs.nodeSecurityContext" . }}
+          securityContext:
+            {{- . | nindent 12 }}
+          {{- end }}
           resources:
             requests:
               cpu: {{ .Values.node.resources.requests.cpu }}
@@ -148,6 +168,7 @@ spec:
           volumeMounts:
             - name: data
               mountPath: {{ if eq .Values.node.storage.type "hostPath" }}{{ .Values.node.storage.hostPath }}{{ else }}{{ .Values.node.dataDir }}{{ end }}
+            {{- include "memoryfs.rdmaVolumeMounts" . | nindent 12 }}
       volumes:
         - name: data
           {{- if eq .Values.node.storage.type "hostPath" }}
@@ -157,3 +178,4 @@ spec:
           {{- else }}
           emptyDir: {}
           {{- end }}
+        {{- include "memoryfs.rdmaVolumes" . | nindent 8 }}

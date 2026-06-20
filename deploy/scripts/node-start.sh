@@ -31,6 +31,15 @@ JOIN="${MEMORYFS_JOIN:-}"
 
 if [ -n "${MEMORYFS_HTTP_URL:-}" ]; then
   ADVERTISE_HTTP="${MEMORYFS_HTTP_URL}"
+elif [ -n "${MEMORYFS_HOST_IP:-}" ]; then
+  _http_port="${HTTP_LISTEN##*:}"
+  _raft_port="${RAFT_LISTEN##*:}"
+  _grpc_port="${GRPC_LISTEN##*:}"
+  _rdma_port="${RDMA_LISTEN##*:}"
+  ADVERTISE_HTTP="http://${MEMORYFS_HOST_IP}:${_http_port}"
+  ADVERTISE_RAFT="${MEMORYFS_HOST_IP}:${_raft_port}"
+  GRPC_LISTEN="${MEMORYFS_HOST_IP}:${_grpc_port}"
+  RDMA_LISTEN="${MEMORYFS_HOST_IP}:${_rdma_port}"
 elif [ -n "${POD_NAME:-}" ] && [ -n "${MEMORYFS_HEADLESS_SERVICE:-}" ]; then
   NS="${POD_NAMESPACE:-default}"
   ADVERTISE_HTTP="http://${POD_NAME}.${MEMORYFS_HEADLESS_SERVICE}.${NS}.svc.cluster.local:8080"

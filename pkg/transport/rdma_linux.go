@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"strings"
 	"sync"
 )
 
@@ -27,14 +28,14 @@ func NewRDMATransport(fallback ChunkTransport) *RDMATransport {
 func (t *RDMATransport) Kind() Kind { return KindRDMA }
 
 func (t *RDMATransport) PutChunk(ctx context.Context, nodeURL, chunkID string, data []byte) error {
-	if err := t.rdmaPut(nodeURL, chunkID, data); err == nil {
+	if err := t.rdmaPut(normalizeRDMAFromNodeURL(nodeURL), chunkID, data); err == nil {
 		return nil
 	}
 	return t.fallback.PutChunk(ctx, nodeURL, chunkID, data)
 }
 
 func (t *RDMATransport) GetChunk(ctx context.Context, nodeURL, chunkID string) ([]byte, error) {
-	if data, err := t.rdmaGet(nodeURL, chunkID); err == nil {
+	if data, err := t.rdmaGet(normalizeRDMAFromNodeURL(nodeURL), chunkID); err == nil {
 		return data, nil
 	}
 	return t.fallback.GetChunk(ctx, nodeURL, chunkID)
@@ -90,6 +91,21 @@ func (t *RDMATransport) rdmaGet(rdmaAddr, chunkID string) ([]byte, error) {
 func normalizeRDMAAddr(addr string) string {
 	if addr == "" {
 		return "127.0.0.1:9092"
+	}
+	return addr
+}
+
+func normalizeRDMAFromNodeURL(nodeURL string) string {
+	addr := strings.TrimPrefix(strings.TrimPrefix(nodeURL, "http://"), "https://")
+	if idx := strings.Index(addr, "/"); idx >= 0 {
+		addr = addr[:idx]
+	}
+	host, port, ok := strings.Cut(addr, ":")
+	if !ok {
+		return addr + ":9092"
+	}
+	if port == "8080" {
+		return host + ":9092"
 	}
 	return addr
 }
