@@ -281,6 +281,7 @@ type File struct {
 
 var (
 	_ fs.NodeGetattrer = (*File)(nil)
+	_ fs.NodeOpener    = (*File)(nil)
 	_ fs.NodeReader    = (*File)(nil)
 	_ fs.NodeWriter    = (*File)(nil)
 	_ fs.NodeSetattrer = (*File)(nil)
@@ -293,6 +294,10 @@ func (f *File) Getattr(ctx context.Context, fh fs.FileHandle, out *fuse.AttrOut)
 	}
 	fillAttr(out, attr)
 	return 0
+}
+
+func (f *File) Open(ctx context.Context, flags uint32) (fs.FileHandle, uint32, syscall.Errno) {
+	return nil, fuse.FOPEN_KEEP_CACHE, 0
 }
 
 func (f *File) Read(ctx context.Context, fh fs.FileHandle, dest []byte, off int64) (fuse.ReadResult, syscall.Errno) {
