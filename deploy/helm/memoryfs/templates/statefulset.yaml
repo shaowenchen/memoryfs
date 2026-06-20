@@ -124,22 +124,15 @@ spec:
           volumeMounts:
             - name: data
               mountPath: {{ .Values.node.dataDir }}
-      {{- if not .Values.node.persistence.enabled }}
+              {{- if eq .Values.node.storage.type "hostPath" }}
+              subPathExpr: $(POD_NAME)
+              {{- end }}
       volumes:
         - name: data
+          {{- if eq .Values.node.storage.type "hostPath" }}
+          hostPath:
+            path: {{ .Values.node.storage.hostPath }}
+            type: {{ .Values.node.storage.hostPathType }}
+          {{- else }}
           emptyDir: {}
-      {{- end }}
-  {{- if .Values.node.persistence.enabled }}
-  volumeClaimTemplates:
-    - metadata:
-        name: data
-      spec:
-        accessModes:
-          {{- toYaml .Values.node.persistence.accessModes | nindent 10 }}
-        {{- if .Values.node.persistence.storageClass }}
-        storageClassName: {{ .Values.node.persistence.storageClass | quote }}
-        {{- end }}
-        resources:
-          requests:
-            storage: {{ .Values.node.persistence.size }}
-  {{- end }}
+          {{- end }}

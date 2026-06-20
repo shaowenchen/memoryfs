@@ -23,7 +23,7 @@ node:
   memCacheMB: 512
   diskQuotaGB: 0
   gcInterval: 5m
-  # Periodic chunk flush/fsync to node.dataDir (emptyDir or PVC).
+  # Periodic chunk flush/fsync to node.dataDir (emptyDir or hostPath).
   diskSync:
     enabled: false
     interval: 30s
@@ -40,13 +40,11 @@ node:
       cpu: "2"
       memory: 4Gi
 
-  # false = emptyDir; true = PVC volumeClaimTemplate
-  persistence:
-    enabled: false
-    storageClass: ""
-    size: 100Gi
-    accessModes:
-      - ReadWriteOnce
+  # emptyDir = ephemeral; hostPath = node local disk (one subdir per Pod under hostPath)
+  storage:
+    type: hostPath
+    hostPath: /var/lib/memoryfs
+    hostPathType: DirectoryOrCreate
 
   podManagementPolicy: OrderedReady
   updateStrategy: RollingUpdate

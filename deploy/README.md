@@ -283,8 +283,8 @@ kubectl -n memoryfs exec memoryfs-0 -- tar -czf - /data > backup-node0.tar.gz
 | `node.chunkBackend` | `memory` | 空值时随 `diskSync` 自动选 `memory`/`buffered` |
 | `node.diskSync.enabled` | `false` | 定时落盘开关 |
 | `node.diskSync.interval` | `30s` | 落盘/fsync 间隔（开关开启时） |
-| `node.persistence.enabled` | `false` | `false`=emptyDir（Pod 重建数据不保留）；`true`=PVC |
-| `node.persistence.size` | `100Gi` | PVC 大小 |
+| `node.storage.type` | `hostPath` | `hostPath`=节点本地盘；`emptyDir`=临时卷 |
+| `node.storage.hostPath` | `/var/lib/memoryfs` | 本地盘根目录（每 Pod 用 `$(POD_NAME)` 子目录） |
 | `node.gcInterval` | `5m` | 孤儿 chunk GC 间隔 |
 | `node.diskQuotaGB` | `0` | 本地磁盘配额（落盘开启时可设限） |
 | `node.lifecycle.preStopDrain` | `true` | 缩容/重启前 drain |
@@ -293,15 +293,18 @@ kubectl -n memoryfs exec memoryfs-0 -- tar -czf - /data > backup-node0.tar.gz
 | `metrics.enabled` | `false` | 启用 ServiceMonitor |
 | `mount.enabled` | `false` | 部署 FUSE DaemonSet（同镜像） |
 
-示例：启用定时落盘 + PVC（生产）
+示例：启用定时落盘 + 本地 hostPath（生产）
 
 ```bash
+# 各节点预先创建目录（Chart 也会 DirectoryOrCreate）
+sudo mkdir -p /var/lib/memoryfs
+
 helm upgrade memoryfs "${CHART}" -n memoryfs \
   --set image.tag="v${VERSION}" \
   --set node.diskSync.enabled=true \
   --set node.diskSync.interval=30s \
-  --set node.persistence.enabled=true \
-  --set node.persistence.size=100Gi \
+  --set node.storage.type=hostPath \
+  --set node.storage.hostPath=/var/lib/memoryfs \
   --set node.diskQuotaGB=100
 ```
 
