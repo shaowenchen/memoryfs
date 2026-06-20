@@ -86,7 +86,7 @@ func main() {
 	defer func() { _ = rn.Close() }()
 
 	if *join != "" {
-		if err := joinClusterBlocking(*join, *id, raftAdvertise, httpURL, *grpcAddr, *rdmaAddr); err != nil {
+		if err := joinClusterBlocking(*join, *id, raftAdvertise, httpURL, *grpcAddr, *rdmaAddr, *uriPrefix); err != nil {
 			log.Fatalf("join cluster: %v", err)
 		}
 	}
@@ -216,11 +216,11 @@ func normalizeHTTP(addr string) string {
 	return "http://" + addr
 }
 
-func joinClusterBlocking(leaderURL, id, raftAddr, httpAddr, grpcAddr, rdmaAddr string) error {
+func joinClusterBlocking(leaderURL, id, raftAddr, httpAddr, grpcAddr, rdmaAddr, uriPrefix string) error {
 	const maxAttempts = 60
 	var lastErr error
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
-		lastErr = joinCluster(leaderURL, id, raftAddr, httpAddr, grpcAddr, rdmaAddr)
+		lastErr = joinCluster(leaderURL, id, raftAddr, httpAddr, grpcAddr, rdmaAddr, uriPrefix)
 		if lastErr == nil {
 			log.Printf("joined cluster via %s as %s", leaderURL, id)
 			return nil
@@ -254,9 +254,9 @@ func ensureRootAsLeader(ctx context.Context, rn *raftnode.Node, store *meta.Loca
 	return fmt.Errorf("timed out waiting to initialize root inode as leader")
 }
 
-func joinCluster(leaderURL, id, raftAddr, httpAddr, grpcAddr, rdmaAddr string) error {
+func joinCluster(leaderURL, id, raftAddr, httpAddr, grpcAddr, rdmaAddr, uriPrefix string) error {
 	for i := 0; i < 5; i++ {
-		next, err := joinClusterOnce(leaderURL, id, raftAddr, httpAddr, grpcAddr, rdmaAddr)
+		next, err := joinClusterOnce(leaderURL, id, raftAddr, httpAddr, grpcAddr, rdmaAddr, uriPrefix)
 		if err != nil {
 			return err
 		}
@@ -268,12 +268,13 @@ func joinCluster(leaderURL, id, raftAddr, httpAddr, grpcAddr, rdmaAddr string) e
 	return fmt.Errorf("join: too many leader redirects")
 }
 
-func joinClusterOnce(leaderURL, id, raftAddr, httpAddr, grpcAddr, rdmaAddr string) (redirect string, err error) {
+func joinClusterOnce(leaderURL, id, raftAddr, httpAddr, grpcAddr, rdmaAddr, uriPrefix string) (redirect string, err error) {
 	body, _ := json.Marshal(map[string]string{
 		"id": id, "raft_addr": raftAddr, "http_addr": httpAddr,
 		"grpc_addr": grpcAddr, "rdma_addr": rdmaAddr,
 	})
-	req, err := http.NewRequest(http.MethodPost, strings.TrimRight(leaderURL, "/")+"/v1/cluster/join", bytes.NewReader(body))
+	joinURL := strings.TrimRight(leaderURL, "/") + node.NormalizeURIPrefix(uriPrefix) + "/v1/cluster/join"
+	req, err := http.NewRequest(http.MethodPost, joinURL, bytes.NewReader(body))
 	if err != nil {
 		return "", err
 	}
