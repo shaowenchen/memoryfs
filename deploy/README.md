@@ -273,7 +273,7 @@ kubectl -n memoryfs exec memoryfs-0 -- tar -czf - /data > backup-node0.tar.gz
 
 ## Helm 参数参考
 
-Chart 默认值已适合生产起步（3 节点、RF=2、tiered、PVC 100Gi、`dashboard.uriPrefix=/memoryfs`）。按需覆盖：
+Chart 默认适合快速试用（3 节点、RF=2、emptyDir、memory 后端、Always 拉镜像）。生产启用落盘见下表。
 
 | 参数 | 默认 | 说明 |
 |------|------|------|
@@ -281,11 +281,12 @@ Chart 默认值已适合生产起步（3 节点、RF=2、tiered、PVC 100Gi、`d
 | `replicaFactor` | `2` | Chunk 跨节点副本数 |
 | `image.repository` | `shaowenchen/memoryfs` | 镜像仓库 |
 | `image.tag` | `latest` | 镜像标签（Release 安装建议设 `v0.1.0`） |
-| `node.chunkBackend` | `tiered` | `disk` / `tiered` / `buffered` / `memory` |
-| `node.memCacheMB` | `512` | tiered 内存读缓存 MB |
-| `node.diskQuotaGB` | `100` | 单节点磁盘配额 GB |
-| `node.persistence.size` | `100Gi` | PVC 大小 |
+| `image.pullPolicy` | `Always` | 镜像拉取策略 |
+| `node.persistence.enabled` | `false` | **落盘开关**：`true` 启用 PVC |
+| `node.persistence.size` | `100Gi` | PVC 大小（落盘开启时） |
 | `node.persistence.storageClass` | | StorageClass（空=默认） |
+| `node.chunkBackend` | 自动 | 落盘关=`memory`，落盘开=`tiered`；可手动覆盖 |
+| `node.diskQuotaGB` | `0` | 单节点磁盘配额（落盘开时建议设限） |
 | `node.gcInterval` | `5m` | 孤儿 chunk GC 间隔 |
 | `node.flushInterval` | `30s` | 定时落盘/fsync 间隔 |
 | `node.lifecycle.preStopDrain` | `true` | 缩容/重启前 drain |
@@ -294,13 +295,14 @@ Chart 默认值已适合生产起步（3 节点、RF=2、tiered、PVC 100Gi、`d
 | `metrics.enabled` | `false` | 启用 ServiceMonitor |
 | `mount.enabled` | `false` | 部署 FUSE DaemonSet（同镜像） |
 
-示例：扩容 + 更大 PVC
+示例：启用落盘 + 更大 PVC
 
 ```bash
 helm upgrade memoryfs "${CHART}" -n memoryfs \
   --set image.tag="v${VERSION}" \
-  --set replicaCount=5 \
-  --set node.persistence.size=200Gi
+  --set node.persistence.enabled=true \
+  --set node.persistence.size=200Gi \
+  --set node.diskQuotaGB=100
 ```
 
 关闭路径前缀（根路径访问 `/dashboard`）：
