@@ -279,7 +279,7 @@ kubectl -n memoryfs exec memoryfs-0 -- tar -czf - /data > backup-node0.tar.gz
 | `replicaFactor` | `2` | Chunk 跨节点副本数 |
 | `image.repository` | `shaowenchen/memoryfs` | 镜像仓库 |
 | `image.tag` | `latest` | 镜像标签（Release 安装建议设 `v0.1.0`） |
-| `image.pullPolicy` | `IfNotPresent` | 镜像拉取策略 |
+| `image.pullPolicy` | `Always` | 镜像拉取策略 |
 | `node.chunkBackend` | `memory` | 空值时随 `diskSync` 自动选 `memory`/`buffered` |
 | `node.diskSync.enabled` | `false` | 定时落盘开关 |
 | `node.diskSync.interval` | `30s` | 落盘/fsync 间隔（开关开启时） |
