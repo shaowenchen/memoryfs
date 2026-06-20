@@ -32,6 +32,28 @@ spec:
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      {{- if eq .Values.node.storage.type "hostPath" }}
+      initContainers:
+        - name: init-data-dir
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - mkdir -p {{ .Values.node.storage.hostPath }}/$INSTANCE_ID/$POD_NAME
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: INSTANCE_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "memoryfs.instanceSecretName" . }}
+                  key: id
+          volumeMounts:
+            - name: data
+              mountPath: {{ .Values.node.storage.hostPath }}
+      {{- end }}
       containers:
         - name: node
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"

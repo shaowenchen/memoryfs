@@ -90,18 +90,24 @@ func Start(cfg Config) (*Node, error) {
 	}
 
 	if cfg.Bootstrap {
-		raftAddr := raft.ServerAddress(cfg.AdvertiseRaft)
-		if raftAddr == "" {
-			raftAddr = transport.LocalAddr()
+		hasState, err := raft.HasExistingState(logStore, stableStore, snapStore)
+		if err != nil {
+			return nil, fmt.Errorf("bootstrap check: %w", err)
 		}
-		configuration := raft.Configuration{
-			Servers: []raft.Server{{
-				ID:      raft.ServerID(cfg.ID),
-				Address: raftAddr,
-			}},
-		}
-		if err := r.BootstrapCluster(configuration).Error(); err != nil {
-			return nil, fmt.Errorf("bootstrap: %w", err)
+		if !hasState {
+			raftAddr := raft.ServerAddress(cfg.AdvertiseRaft)
+			if raftAddr == "" {
+				raftAddr = transport.LocalAddr()
+			}
+			configuration := raft.Configuration{
+				Servers: []raft.Server{{
+					ID:      raft.ServerID(cfg.ID),
+					Address: raftAddr,
+				}},
+			}
+			if err := r.BootstrapCluster(configuration).Error(); err != nil {
+				return nil, fmt.Errorf("bootstrap: %w", err)
+			}
 		}
 	}
 

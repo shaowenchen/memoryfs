@@ -342,7 +342,9 @@ https://github.com/shaowenchen/memoryfs/releases/download/v0.1.0/memoryfs-0.1.0.
 
 | 现象 | 处理 |
 |------|------|
+| Pod `ContainerCreating` 卡住 | 看 Events：`FailedMount` 多为 hostPath 子目录不存在（升级含 initContainer 的 Chart）；节点执行 `mkdir -p /data/memoryfs` |
 | `ImagePullBackOff` | 确认镜像存在：优先 `--set image.tag=latest`；国内可用 ACR 镜像 |
+| `CrashLoopBackOff`（1/2） | 先看 `kubectl logs memoryfs-1`；常见为旧镜像 `meta store: not leader`，需拉最新镜像；或 0 未 Ready 时 join 失败（会重试，不应致命） |
 | `meta store: not leader` | 确保 memoryfs-0 先 Ready；`helm upgrade` 拉取含修复的新镜像 |
 | 节点 `draining` 卡住 | 检查 peer 可达；必要时 `drain?force=true` |
 | chunk 缺失 | `node-rebuild.sh` 或 restart（自动 ready） |
