@@ -21,18 +21,16 @@ helm upgrade --install memoryfs \
 - `replicaFactor` — 数据副本数
 - `node.storageGB` — 每节点最大存储（GB）；Pod 内存 limit/request = storageGB+1Gi
 
-默认 **hostNetwork** 部署（HTTP/Raft/gRPC/RDMA 直接监听主机端口；每节点最多 1 个 Pod）。节点有 RDMA 设备（如 InfiniBand / RoCE）时自动走 RDMA 传输，否则降级 gRPC/HTTP；Chart 已挂载 `/dev/infiniband` 并注入 `IPC_LOCK`。
-
 ## 挂载
 
-默认挂载目录 **`/data/memoryfs`**。`-nodes` **填任意一个可达节点**即可（如 node3）；chunk 在其它节点时，该节点会向 peer 拉取后再返回。
+默认挂载目录 **`/mnt/memoryfs`**。`-nodes` **填任意一个可达节点**即可（如 node3）；chunk 在其它节点时，该节点会向 peer 拉取后再返回。
 
 ```bash
 docker run -it --rm --privileged \
-  -v /data/memoryfs:/data/memoryfs \
+  -v /mnt/memoryfs:/mnt/memoryfs \
   --network host \
   shaowenchen/memoryfs:latest \
-  mount -mount /data/memoryfs \
+  mount -mount /mnt/memoryfs \
   -nodes http://10.0.0.3:8080 \
   -f
 ```

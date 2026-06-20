@@ -65,8 +65,8 @@ node:
 
 mount:
   enabled: false
-  mountPath: /data/memoryfs
-  hostPath: /data/memoryfs
+  mountPath: /mnt/memoryfs
+  hostPath: /mnt/memoryfs
 
 metrics:
   enabled: false

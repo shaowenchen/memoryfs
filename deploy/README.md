@@ -61,16 +61,14 @@ helm upgrade --install memoryfs "${CHART}" \
 - `replicaFactor` — 数据副本数
 - `node.storageGB` — 每节点最大存储（GB）；Pod 内存 = storageGB+1Gi
 
-默认 **hostNetwork: true**（`dnsPolicy: ClusterFirstWithHostNet`），节点间用 **主机 IP** 宣告地址；端口见 `service.httpPort/grpcPort/raftPort/rdmaPort`（8080/9090/8081/9092）。
-
-RDMA 无需单独开关：节点有 InfiniBand 设备（`/dev/infiniband/uverbs*`）时自动使用，否则走 gRPC/HTTP。Chart 默认挂载 `/dev/infiniband` 并注入 `IPC_LOCK`。
+网络与 RDMA 见 [docs/ARCHITECTURE.md](../docs/ARCHITECTURE.md#kubernetes-部署)。
 
 ### 挂载
 
-默认目录 **`/data/memoryfs`**。只连 **一个节点** 即可（数据在其它节点时，该节点 HTTP `/chunks/` 会向 peer 拉取）：
+默认目录 **`/mnt/memoryfs`**。只连 **一个节点** 即可（数据在其它节点时，该节点 HTTP `/chunks/` 会向 peer 拉取）：
 
 ```bash
-mount -mount /data/memoryfs \
+mount -mount /mnt/memoryfs \
   -nodes http://10.0.0.3:8080 \
   -f
 ```
