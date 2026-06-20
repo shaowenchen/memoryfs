@@ -228,25 +228,9 @@ func (s *Service) PutChunk(ctx context.Context, chunkID string, data []byte) ([]
 	return replicas, nil
 }
 
-// GetChunk reads a chunk from local disk, falling back to peer replicas.
+// GetChunk reads a chunk from local storage only.
 func (s *Service) GetChunk(ctx context.Context, chunkID string) ([]byte, error) {
 	if data, ok := s.cfg.Chunks.Get(chunkID); ok {
-		return data, nil
-	}
-	nodes, err := s.cfg.Meta.ListNodes(ctx)
-	if err != nil {
-		return nil, err
-	}
-	replicas, _ := s.replicaSet(ctx, chunkID, nodes)
-	for _, node := range replicas {
-		if node == s.cfg.NodeHTTP {
-			continue
-		}
-		data, err := s.cfg.Transport.GetChunk(ctx, node, chunkID)
-		if err != nil {
-			continue
-		}
-		_ = s.cfg.Chunks.Put(chunkID, data)
 		return data, nil
 	}
 	return nil, fmt.Errorf("chunk not found")

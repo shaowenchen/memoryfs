@@ -36,13 +36,10 @@ func NewChunkStore(metaStore meta.Backend, nodes []string, replicaFactor int) *C
 	}
 }
 
-// RefreshNodes merges cluster-registered nodes with any configured seed URLs.
+// RefreshNodes keeps configured seed nodes for chunk I/O (no cluster-wide fan-out).
 func (c *ChunkStore) RefreshNodes(ctx context.Context) error {
-	registered, err := c.meta.ListNodes(ctx)
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.nodes = mergeNodeURLs(c.nodes, registered)
-	return err
+	_ = ctx
+	return nil
 }
 
 func mergeNodeURLs(existing, discovered []string) []string {
@@ -80,11 +77,7 @@ func (c *ChunkStore) selectNodes(chunkID string, rf int) ([]string, error) {
 }
 
 func (c *ChunkStore) nodesForChunk(chunkID string) []string {
-	primary, err := c.selectNodes(chunkID, c.replicaFactor)
-	if err != nil {
-		return c.Nodes()
-	}
-	return mergeNodeURLs(primary, c.Nodes())
+	return c.Nodes()
 }
 
 // Read reads up to len(dest) bytes at offset from a file identified by attr.

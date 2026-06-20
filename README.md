@@ -25,7 +25,7 @@ helm upgrade --install memoryfs \
 
 ## 挂载
 
-默认挂载目录 **`/mnt/memoryfs`**。`-nodes` **填任意一个可达节点**即可；chunk 在其它节点时，该节点会向 peer 拉取后再返回。
+默认挂载目录 **`/mnt/memoryfs`**。`-nodes` 填要挂载的节点；只读写该节点本地 chunk 数据。
 
 ```bash
 mkdir -p /mnt/memoryfs

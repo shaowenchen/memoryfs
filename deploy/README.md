@@ -67,7 +67,7 @@ helm upgrade --install memoryfs "${CHART}" \
 
 ### 挂载
 
-默认目录 **`/mnt/memoryfs`**。只连 **一个节点** 即可（数据在其它节点时，该节点 HTTP `/chunks/` 会向 peer 拉取）：
+默认目录 **`/mnt/memoryfs`**。`-nodes` 指定节点，只访问该节点本地 chunk：
 
 ```bash
 mount -mount /mnt/memoryfs \
