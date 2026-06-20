@@ -273,7 +273,7 @@ kubectl -n memoryfs exec memoryfs-0 -- tar -czf - /data > backup-node0.tar.gz
 
 ## Helm 参数参考
 
-Chart 默认适合快速试用（3 节点、RF=2、emptyDir、memory 后端、Always 拉镜像）。生产启用落盘见下表。
+Chart 默认适合快速试用（3 节点、RF=2、emptyDir、memory 后端）。生产启用落盘见下表。
 
 | 参数 | 默认 | 说明 |
 |------|------|------|
@@ -281,7 +281,7 @@ Chart 默认适合快速试用（3 节点、RF=2、emptyDir、memory 后端、Al
 | `replicaFactor` | `2` | Chunk 跨节点副本数 |
 | `image.repository` | `shaowenchen/memoryfs` | 镜像仓库 |
 | `image.tag` | `latest` | 镜像标签（Release 安装建议设 `v0.1.0`） |
-| `image.pullPolicy` | `Always` | 镜像拉取策略 |
+| `image.pullPolicy` | `IfNotPresent` | 镜像拉取策略 |
 | `node.persistence.enabled` | `false` | **落盘开关**：`true` 启用 PVC |
 | `node.persistence.size` | `100Gi` | PVC 大小（落盘开启时） |
 | `node.persistence.storageClass` | | StorageClass（空=默认） |

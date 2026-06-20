@@ -4,7 +4,7 @@
 
 ## 安装
 
-默认：**Always 拉镜像**、**emptyDir**（Pod 重启数据不保留）、Chunk **memory** 后端。
+默认：**emptyDir**（Pod 重启数据不保留）、Chunk **memory** 后端。
 
 ```bash
 VERSION=0.1.0

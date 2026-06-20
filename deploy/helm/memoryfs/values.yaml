@@ -6,7 +6,7 @@ replicaCount: 3
 image:
   repository: shaowenchen/memoryfs
   tag: latest
-  pullPolicy: Always
+  pullPolicy: IfNotPresent
 
 nameOverride: ""
 fullnameOverride: ""
