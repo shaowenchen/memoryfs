@@ -114,14 +114,7 @@ memory
 {{- end }}
 
 {{- define "memoryfs.bootstrapJoinScript" -}}
-ORD="${POD_NAME##*-}"
-export MEMORYFS_ID="${POD_NAME}"
 export MEMORYFS_HEADLESS_SERVICE="{{ include "memoryfs.headless" . }}"
-if [ "$ORD" = "0" ]; then
-  export MEMORYFS_BOOTSTRAP=true
-else
-  export MEMORYFS_JOIN="http://{{ include "memoryfs.fullname" . }}-0.{{ include "memoryfs.headless" . }}.{{ .Release.Namespace }}.svc:{{ .Values.service.httpPort }}"
-fi
 exec /app/entrypoint.sh node-env
 {{- end }}
 
