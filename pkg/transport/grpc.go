@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net"
 	"strings"
 	"time"
 
@@ -24,6 +25,10 @@ func NewGRPCTransport() *GRPCTransport {
 		dial: func(target string) (*grpc.ClientConn, error) {
 			return grpc.NewClient(target,
 				grpc.WithTransportCredentials(insecure.NewCredentials()),
+				grpc.WithContextDialer(func(ctx context.Context, addr string) (net.Conn, error) {
+					d := net.Dialer{Timeout: DialTimeout}
+					return d.DialContext(ctx, "tcp", addr)
+				}),
 				grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(16<<20), grpc.MaxCallSendMsgSize(16<<20)),
 			)
 		},
@@ -100,15 +105,18 @@ func (t *GRPCTransport) DeleteChunk(ctx context.Context, nodeURL, chunkID string
 
 func normalizeGRPC(nodeURL string) string {
 	addr := strings.TrimPrefix(strings.TrimPrefix(nodeURL, "http://"), "https://")
+	if idx := strings.Index(addr, "/"); idx >= 0 {
+		addr = addr[:idx]
+	}
 	if !strings.Contains(addr, ":") {
 		return addr + ":9090"
 	}
-	host, _, ok := strings.Cut(addr, ":")
+	host, port, ok := strings.Cut(addr, ":")
 	if !ok {
 		return addr
 	}
 	// Map http port 8080 -> grpc 9090 when using http URL.
-	if strings.HasSuffix(addr, ":8080") {
+	if port == "8080" {
 		return host + ":9090"
 	}
 	return addr

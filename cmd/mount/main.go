@@ -46,7 +46,7 @@ func main() {
 	defer func() { _ = metaStore.Close() }()
 
 	rf := detectReplicaFactor(nodeList)
-	chunks := storage.NewChunkStore(metaStore, metaStore.Nodes(), rf)
+	chunks := storage.NewHTTPChunkStore(metaStore, metaStore.Nodes(), rf)
 	if err := chunks.RefreshNodes(context.Background()); err != nil {
 		log.Printf("warning: refresh nodes: %v", err)
 	}

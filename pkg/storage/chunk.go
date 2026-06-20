@@ -22,16 +22,27 @@ type ChunkStore struct {
 
 // NewChunkStore creates a chunk store with multi-protocol transport.
 func NewChunkStore(metaStore meta.Backend, nodes []string, replicaFactor int) *ChunkStore {
-	if replicaFactor <= 0 {
-		replicaFactor = chunk.DefaultReplicaFactor
-	}
 	httpTP := transport.NewHTTPTransport()
 	grpcTP := transport.NewGRPCTransport()
 	rdmaTP := transport.NewRDMATransport(grpcTP)
+	return newChunkStore(metaStore, nodes, replicaFactor, transport.NewMultiTransport(rdmaTP, grpcTP, httpTP))
+}
+
+// NewHTTPChunkStore creates a chunk store that uses HTTP chunk endpoints only.
+// FUSE mount clients should use this to avoid gRPC/RDMA fallback latency on
+// prefixed HTTP node URLs.
+func NewHTTPChunkStore(metaStore meta.Backend, nodes []string, replicaFactor int) *ChunkStore {
+	return newChunkStore(metaStore, nodes, replicaFactor, transport.NewHTTPTransport())
+}
+
+func newChunkStore(metaStore meta.Backend, nodes []string, replicaFactor int, tp transport.ChunkTransport) *ChunkStore {
+	if replicaFactor <= 0 {
+		replicaFactor = chunk.DefaultReplicaFactor
+	}
 	return &ChunkStore{
 		nodes:         append([]string(nil), nodes...),
 		meta:          metaStore,
-		transport:     transport.NewMultiTransport(rdmaTP, grpcTP, httpTP),
+		transport:     tp,
 		replicaFactor: replicaFactor,
 	}
 }

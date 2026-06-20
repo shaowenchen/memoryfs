@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 )
 
 type registrySetRequest struct {
@@ -18,6 +19,8 @@ type registrySetRequest struct {
 type registryDeleteRequest struct {
 	ChunkID string `json:"chunk_id"`
 }
+
+var registryHTTPClient = &http.Client{Timeout: 15 * time.Second}
 
 // RecordChunkRegistry stores chunk replica locations in the Raft-backed registry.
 func (s *Service) RecordChunkRegistry(ctx context.Context, chunkID string, replicas []string) error {
@@ -35,7 +38,7 @@ func (s *Service) RecordChunkRegistry(ctx context.Context, chunkID string, repli
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := registryHTTPClient.Do(req)
 	if err != nil {
 		return err
 	}
@@ -61,7 +64,7 @@ func (s *Service) DeleteChunkRegistry(ctx context.Context, chunkID string) error
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := registryHTTPClient.Do(req)
 	if err != nil {
 		return err
 	}
