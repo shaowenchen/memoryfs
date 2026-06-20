@@ -80,7 +80,7 @@ fi
 
 echo "memoryfs node-env: id=${ID} bootstrap=${BOOTSTRAP} join=${JOIN:-<none>} data=${DATA}"
 
-set -- node \
+set -- \
   -id "${ID}" \
   -http "${HTTP_LISTEN}" \
   -advertise-http "${ADVERTISE_HTTP}" \
