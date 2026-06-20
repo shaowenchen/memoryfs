@@ -2,8 +2,8 @@ apiVersion: v2
 name: memoryfs
 description: Distributed memory-oriented filesystem cluster
 type: application
-version: 0.1.0
-appVersion: "latest"
+version: 0.1.1
+appVersion: "0.1.1"
 home: https://github.com/shaowenchen/memoryfs
 sources:
   - https://github.com/shaowenchen/memoryfs

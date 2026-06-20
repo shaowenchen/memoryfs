@@ -249,24 +249,48 @@ func waitForRaftLeader(rn *raftnode.Node, timeout time.Duration) {
 }
 
 func joinCluster(leaderURL, id, raftAddr, httpAddr, grpcAddr, rdmaAddr string) error {
+	for i := 0; i < 5; i++ {
+		next, err := joinClusterOnce(leaderURL, id, raftAddr, httpAddr, grpcAddr, rdmaAddr)
+		if err != nil {
+			return err
+		}
+		if next == "" {
+			return nil
+		}
+		leaderURL = next
+	}
+	return fmt.Errorf("join: too many leader redirects")
+}
+
+func joinClusterOnce(leaderURL, id, raftAddr, httpAddr, grpcAddr, rdmaAddr string) (redirect string, err error) {
 	body, _ := json.Marshal(map[string]string{
 		"id": id, "raft_addr": raftAddr, "http_addr": httpAddr,
 		"grpc_addr": grpcAddr, "rdma_addr": rdmaAddr,
 	})
 	req, err := http.NewRequest(http.MethodPost, strings.TrimRight(leaderURL, "/")+"/v1/cluster/join", bytes.NewReader(body))
 	if err != nil {
-		return err
+		return "", err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode >= 300 {
-		return fmt.Errorf("join status %d", resp.StatusCode)
+	if resp.StatusCode == http.StatusTemporaryRedirect || resp.StatusCode == http.StatusFound {
+		var out struct {
+			Leader string `json:"leader"`
+		}
+		_ = json.NewDecoder(resp.Body).Decode(&out)
+		if out.Leader != "" {
+			return out.Leader, nil
+		}
+		return "", fmt.Errorf("join status %d", resp.StatusCode)
 	}
-	return nil
+	if resp.StatusCode >= 300 {
+		return "", fmt.Errorf("join status %d", resp.StatusCode)
+	}
+	return "", nil
 }
 
 func dashboardAddr(httpListen, uriPrefix string) string {
