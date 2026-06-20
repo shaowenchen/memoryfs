@@ -1,0 +1,16 @@
+---
+description: Commit and push to origin/master after every code fix
+alwaysApply: true
+---
+
+# Commit After Fix
+
+After completing a bug fix or code change in this repo:
+
+1. Run `git status` and `git diff` to verify the change set.
+2. Commit with a concise message focused on **why** (not only what).
+3. Push to `origin/master` unless the user explicitly asks not to push.
+
+Do not leave fixes uncommitted at the end of a turn. If the user only asked a question with no code change, skip commit.
+
+Follow the existing git safety protocol: no force push, no git config changes, no `--no-verify`.
