@@ -61,8 +61,8 @@ node:
 
 mount:
   enabled: false
-  mountPath: /mnt/memoryfs
-  hostPath: /var/lib/memoryfs
+  mountPath: /data/memoryfs
+  hostPath: /data/memoryfs
   replicaFactor: 2
 
 metrics:

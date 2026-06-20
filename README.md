@@ -15,39 +15,29 @@ helm upgrade --install memoryfs \
   --set node.storageGB=32
 ```
 
-只需配置 **`replicaCount`**（节点数）、**`replicaFactor`**（数据副本数）和 **`node.storageGB`**（每节点最大存储 GB）；Pod 内存 limit/request 自动为 storageGB+1Gi。Chart 强制每个 K8s 节点最多运行 1 个 MemoryFS Pod（`replicaCount` 不能超过已标签节点数）。
+参数：
+
+- `replicaCount` — 节点数（每 K8s 节点最多 1 个 Pod）
+- `replicaFactor` — 数据副本数
+- `node.storageGB` — 每节点最大存储（GB）；Pod 内存 limit/request = storageGB+1Gi
 
 ## 挂载
 
-**K8s 节点挂载**（每节点 FUSE，业务 Pod 用 hostPath 共享）：
-
-```bash
-helm upgrade --install memoryfs \
-  https://github.com/shaowenchen/memoryfs/releases/download/latest/memoryfs-latest.tar.gz \
-  -n memoryfs --create-namespace \
-  --set replicaCount=3 \
-  --set replicaFactor=2 \
-  --set node.storageGB=32 \
-  --set mount.enabled=true
-```
-
-挂载目录默认为 **`/var/lib/memoryfs`**（`mount.hostPath`）。
-
-**本机挂载**（需 `--privileged` 与 `/dev/fuse`）：
+默认挂载目录 **`/data/memoryfs`**。本机 FUSE（需 `--privileged` 与 `/dev/fuse`）：
 
 ```bash
 kubectl -n memoryfs port-forward svc/memoryfs 8080:8080
 
 docker run -it --rm --privileged \
-  -v /mnt/memoryfs:/mnt/memoryfs \
+  -v /data/memoryfs:/data/memoryfs \
   --network host \
   shaowenchen/memoryfs:latest \
-  mount -mount /mnt/memoryfs \
+  mount -mount /data/memoryfs \
   -nodes http://127.0.0.1:8080 \
   -replica-factor 2 -f
 ```
 
-`-replica-factor` 须与安装时的 **`replicaFactor`** 一致。`-nodes` 填任意一个可达节点或 Service 地址即可，客户端会自动发现集群。
+`-nodes` 填任意一个可达节点或 Service 即可；`-replica-factor` 与 `replicaFactor` 一致。
 
 ## 卸载
 
