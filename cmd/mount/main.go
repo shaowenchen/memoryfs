@@ -20,6 +20,7 @@ import (
 	"github.com/shaowenchen/memoryfs/pkg/cli"
 	"github.com/shaowenchen/memoryfs/pkg/client"
 	"github.com/shaowenchen/memoryfs/pkg/fusefs"
+	"github.com/shaowenchen/memoryfs/pkg/mountlog"
 	"github.com/shaowenchen/memoryfs/pkg/service"
 	"github.com/shaowenchen/memoryfs/pkg/storage"
 )
@@ -32,8 +33,10 @@ func main() {
 	sizeGB := flag.Int("size-gb", envIntOr("MEMORYFS_SIZE_GB", 32), "reported filesystem size for df (GB)")
 	foreground := flag.Bool("f", false, "run in foreground")
 	debug := flag.Bool("debug", false, "enable fuse debug")
-	verbose := flag.Bool("v", false, "log periodic health heartbeats")
+	verbose := flag.Bool("v", false, "verbose: log I/O operations and periodic heartbeats")
 	flag.Parse()
+
+	mountlog.SetVerbose(*verbose)
 
 	if *mountPoint == "" {
 		log.Fatal("mount point is required: -mount /path/to/mount")
@@ -49,13 +52,14 @@ func main() {
 		}
 	}
 
-	log.Printf("memoryfs mount starting pid=%d mount=%s nodes=%v", os.Getpid(), *mountPoint, nodeList)
+	log.Printf("memoryfs mount starting pid=%d mount=%s nodes=%v verbose=%v", os.Getpid(), *mountPoint, nodeList, *verbose)
 
 	metaStore := client.NewRemoteMeta(nodeList)
 	defer func() { _ = metaStore.Close() }()
 
 	seed := strings.TrimRight(strings.TrimSpace(nodeList[0]), "/")
 	prefix := cli.NormalizePrefix(cli.DetectPrefix(context.Background(), seed, ""))
+	log.Printf("detected uri prefix=%q", prefix)
 	apiClient := cli.NewClient(seed, prefix, "")
 
 	ov, err := apiClient.Overview(context.Background())
@@ -64,6 +68,10 @@ func main() {
 	}
 	log.Printf("cluster ok: leader=%s rf=%d epoch=%d reachable_nodes=%d",
 		ov.Leader, ov.ReplicaFactor, ov.ClusterEpoch, reachableNodes(ov))
+	for _, n := range ov.Nodes {
+		log.Printf("  node url=%s reachable=%v role=%s state=%s chunks=%d disk=%d",
+			n.URL, n.Reachable, n.Role, n.NodeState, n.Stats.ChunkCount, n.Stats.DiskBytes)
+	}
 
 	rf := ov.ReplicaFactor
 	if rf <= 0 {

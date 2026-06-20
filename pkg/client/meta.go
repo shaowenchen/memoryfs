@@ -13,6 +13,7 @@ import (
 
 	"github.com/shaowenchen/memoryfs/pkg/cli"
 	"github.com/shaowenchen/memoryfs/pkg/meta"
+	"github.com/shaowenchen/memoryfs/pkg/mountlog"
 )
 
 // RemoteMeta implements meta.Backend over HTTP.
@@ -181,20 +182,26 @@ func (r *RemoteMeta) post(ctx context.Context, path string, req fsReq, resp *fsR
 	}
 	var lastErr error
 	for _, base := range nodes {
-		if err := r.doPost(ctx, base+path, req, resp); err != nil {
+		url := base + path
+		if err := r.doPost(ctx, url, req, resp); err != nil {
 			lastErr = err
+			mountlog.Warnf("meta POST %s: %v", url, err)
 			if write && resp.Leader != "" {
 				leader := prefixedNodeURL(resp.Leader, r.uriPrefix)
 				r.mu.Lock()
 				r.leader = leader
 				r.mu.Unlock()
-				return r.doPost(ctx, leader+path, req, resp)
+				leaderURL := leader + path
+				mountlog.Infof("meta redirect to leader %s", leaderURL)
+				return r.doPost(ctx, leaderURL, req, resp)
 			}
 			continue
 		}
 		if resp.Error != "" {
+			mountlog.Warnf("meta POST %s: %s", url, resp.Error)
 			return mapClientError(resp.Error)
 		}
+		mountlog.Debugf("meta POST ok %s", url)
 		return nil
 	}
 	return lastErr

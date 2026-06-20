@@ -3,7 +3,6 @@ package fusefs
 import (
 	"context"
 	"errors"
-	"log"
 	"syscall"
 	"time"
 
@@ -11,6 +10,7 @@ import (
 	"github.com/hanwen/go-fuse/v2/fuse"
 
 	"github.com/shaowenchen/memoryfs/pkg/meta"
+	"github.com/shaowenchen/memoryfs/pkg/mountlog"
 	"github.com/shaowenchen/memoryfs/pkg/storage"
 )
 
@@ -330,6 +330,7 @@ func (f *File) Getattr(ctx context.Context, fh fs.FileHandle, out *fuse.AttrOut)
 }
 
 func (f *File) Open(ctx context.Context, flags uint32) (fs.FileHandle, uint32, syscall.Errno) {
+	mountlog.Debugf("fuse open ino=%d flags=0%o", f.ino, flags)
 	return nil, fuse.FOPEN_KEEP_CACHE, 0
 }
 
@@ -340,9 +341,10 @@ func (f *File) Read(ctx context.Context, fh fs.FileHandle, dest []byte, off int6
 	}
 	n, err := f.chunks.Read(ctx, attr, dest, off)
 	if err != nil {
-		log.Printf("read error ino=%d off=%d: %v", f.ino, off, err)
+		mountlog.Errorf("fuse read ino=%d off=%d len=%d: %v", f.ino, off, len(dest), err)
 		return nil, syscall.EIO
 	}
+	mountlog.Debugf("fuse read ino=%d off=%d got=%d", f.ino, off, n)
 	return fuse.ReadResultData(dest[:n]), 0
 }
 
@@ -352,11 +354,13 @@ func (f *File) Write(ctx context.Context, fh fs.FileHandle, data []byte, off int
 		return 0, syscall.ENOENT
 	}
 	if err := f.chunks.Write(ctx, attr, data, off); err != nil {
-		log.Printf("write error ino=%d off=%d: %v", f.ino, off, err)
+		mountlog.Errorf("fuse write ino=%d off=%d len=%d: %v", f.ino, off, len(data), err)
 		return 0, syscall.EIO
 	}
+	mountlog.Debugf("fuse write ino=%d off=%d len=%d size=%d", f.ino, off, len(data), attr.Size)
 	attr.Mtime = time.Now().Unix()
 	if err := f.store.UpdateAttr(ctx, attr); err != nil {
+		mountlog.Errorf("fuse setattr ino=%d after write: %v", f.ino, err)
 		return 0, syscall.EIO
 	}
 	return uint32(len(data)), 0

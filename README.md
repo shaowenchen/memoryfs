@@ -67,6 +67,12 @@ fusermount -u /mnt/memoryfs  # 或 bash deploy/scripts/unmount-stale.sh /mnt/mem
 
 也可逗号分隔多个 `-nodes` 节点。`-size-gb` 应与 Helm 的 `node.storageGB` 一致（供 `df` 显示容量）。
 
+**排查日志**：加 `-v` 会打印 FUSE 读写、chunk HTTP、元数据请求；`-debug` 打开 FUSE 内核级调试。
+
+```bash
+nerdctl logs -f memoryfs-mount   # 查看 mount 容器日志
+```
+
 ## 卸载
 
 ```bash

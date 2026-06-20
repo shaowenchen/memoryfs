@@ -8,6 +8,7 @@ import (
 
 	"github.com/shaowenchen/memoryfs/pkg/chunk"
 	"github.com/shaowenchen/memoryfs/pkg/meta"
+	"github.com/shaowenchen/memoryfs/pkg/mountlog"
 	"github.com/shaowenchen/memoryfs/pkg/transport"
 )
 
@@ -198,8 +199,10 @@ func (c *ChunkStore) readChunk(ctx context.Context, chunkID string) ([]byte, err
 	for _, node := range nodes {
 		data, err := c.transport.GetChunk(ctx, node, chunkID)
 		if err == nil {
+			mountlog.Debugf("chunk %s GET ok node=%s bytes=%d", chunkID, node, len(data))
 			return data, nil
 		}
+		mountlog.Warnf("chunk %s GET failed node=%s: %v", chunkID, node, err)
 		last = err
 	}
 	return nil, last
@@ -213,11 +216,14 @@ func (c *ChunkStore) writeChunk(ctx context.Context, chunkID string, data []byte
 	var last error
 	for _, node := range nodes {
 		if err := c.transport.PutChunk(ctx, node, chunkID, data); err == nil {
+			mountlog.Debugf("chunk %s PUT ok node=%s bytes=%d", chunkID, node, len(data))
 			return nil
 		} else {
+			mountlog.Warnf("chunk %s PUT failed node=%s: %v", chunkID, node, err)
 			last = err
 		}
 	}
+	mountlog.Errorf("chunk %s PUT all nodes failed: %v", chunkID, last)
 	return last
 }
 
