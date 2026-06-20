@@ -67,7 +67,7 @@ chmod +x scripts/*.sh
 
 ### 方式 B：Kubernetes Helm（推荐生产）
 
-从 [GitHub Release](https://github.com/shaowenchen/memoryfs/releases) 安装（推荐）：
+最简安装（Release Chart + 镜像版本）：
 
 ```bash
 VERSION=0.1.0
@@ -75,42 +75,28 @@ CHART="https://github.com/shaowenchen/memoryfs/releases/download/v${VERSION}/mem
 
 helm upgrade --install memoryfs "${CHART}" \
   --namespace memoryfs --create-namespace \
-  --set image.tag="v${VERSION}" \
-  --set replicaCount=3 \
-  --set replicaFactor=2 \
-  --set node.persistence.size=100Gi
-
-# 通过 Ingress 暴露管理面板（与 API 共用 node 镜像/进程）
-helm upgrade --install memoryfs "${CHART}" \
-  --namespace memoryfs --create-namespace \
-  --set image.tag="v${VERSION}" \
-  --set dashboard.uriPrefix=/memoryfs \
-  --set dashboard.ingress.enabled=true \
-  --set dashboard.ingress.className=nginx \
-  --set dashboard.ingress.host=memoryfs.example.com \
-  --set dashboard.ingress.path=/memoryfs
+  --set image.tag="v${VERSION}"
 ```
 
-访问管理面板：`https://memoryfs.example.com/memoryfs/dashboard`
+查看 Pod 并打开管理面板（经 Service port-forward）：
+
+```bash
+kubectl -n memoryfs get pods -l component=node
+
+kubectl -n memoryfs port-forward svc/memoryfs 8080:8080 &
+open http://127.0.0.1:8080/memoryfs/dashboard   # macOS；Linux 用 xdg-open
+```
+
+集群内访问：`http://memoryfs.memoryfs.svc:8080/memoryfs/dashboard`
 
 本地开发可直接使用仓库内 Chart：
 
 ```bash
 helm upgrade --install memoryfs ./deploy/helm/memoryfs \
-  --namespace memoryfs --create-namespace \
-  --set replicaCount=3 \
-  --set replicaFactor=2 \
-  --set node.persistence.size=100Gi
+  --namespace memoryfs --create-namespace
 ```
 
-# 查看 Pod
-```bash
-kubectl -n memoryfs get pods -l component=node
-
-# 集群状态（通过 Service）
-kubectl -n memoryfs port-forward svc/memoryfs 8080:8080 &
-./deploy/scripts/cluster-status.sh http://127.0.0.1:8080
-```
+Helm 全部可配置项见下文 **[Helm 参数参考](#helm-参数参考)**。
 
 启用 FUSE DaemonSet（每节点挂载）：
 
@@ -283,19 +269,57 @@ kubectl -n memoryfs exec memoryfs-0 -- tar -czf - /data > backup-node0.tar.gz
 
 ---
 
+## Helm 参数参考
+
+Chart 默认值已适合生产起步（3 节点、RF=2、tiered、PVC 100Gi、`dashboard.uriPrefix=/memoryfs`）。按需覆盖：
+
+| 参数 | 默认 | 说明 |
+|------|------|------|
+| `replicaCount` | `3` | StatefulSet 节点数 |
+| `replicaFactor` | `2` | Chunk 跨节点副本数 |
+| `image.repository` | `shaowenchen/memoryfs` | 镜像仓库 |
+| `image.tag` | `latest` | 镜像标签（Release 安装建议设 `v0.1.0`） |
+| `node.chunkBackend` | `tiered` | `disk` / `tiered` / `buffered` / `memory` |
+| `node.memCacheMB` | `512` | tiered 内存读缓存 MB |
+| `node.diskQuotaGB` | `100` | 单节点磁盘配额 GB |
+| `node.persistence.size` | `100Gi` | PVC 大小 |
+| `node.persistence.storageClass` | | StorageClass（空=默认） |
+| `node.gcInterval` | `5m` | 孤儿 chunk GC 间隔 |
+| `node.flushInterval` | `30s` | 定时落盘/fsync 间隔 |
+| `node.lifecycle.preStopDrain` | `true` | 缩容/重启前 drain |
+| `dashboard.uriPrefix` | `/memoryfs` | 管理面板与 HTTP API 路径前缀 |
+| `apiToken` | | 写操作 Bearer Token（可选） |
+| `metrics.enabled` | `false` | 启用 ServiceMonitor |
+| `mount.enabled` | `false` | 部署 FUSE DaemonSet（同镜像） |
+
+示例：扩容 + 更大 PVC
+
+```bash
+helm upgrade memoryfs "${CHART}" -n memoryfs \
+  --set image.tag="v${VERSION}" \
+  --set replicaCount=5 \
+  --set node.persistence.size=200Gi
+```
+
+关闭路径前缀（根路径访问 `/dashboard`）：
+
+```bash
+helm upgrade memoryfs "${CHART}" -n memoryfs --set dashboard.uriPrefix=
+```
+
+---
+
 ## 运维 API
 
-| 接口 | 方法 | 用途 |
+| 路径 | 方法 | 用途 |
 |------|------|------|
-| `/dashboard` | GET | Web 管理面板（与 node 服务同进程） |
-| `/v1/cluster/overview` | GET | 面板数据 API |
-| `/metrics` | GET | Prometheus 指标 |
-| `/v1/cluster/overview` | GET | 集群聚合状态 |
-| `/v1/repair` | GET | 副本修复队列 |
-| `/v1/repair/run` | POST | 手动触发副本修复 |
-| `/health` | GET | 健康检查 + epoch |
-| `/v1/stats` | GET | 节点存储统计 |
-| `/v1/gc` | POST | 孤儿 chunk 清理 |
+| `{uriPrefix}/dashboard` | GET | Web 管理面板（默认 `/memoryfs/dashboard`） |
+| `{uriPrefix}/v1/cluster/overview` | GET | 面板数据 API |
+| `/health` | GET | 健康检查（探针，无前缀） |
+| `/metrics` | GET | Prometheus 指标（探针，无前缀） |
+| `{uriPrefix}/v1/repair/run` | POST | 手动触发副本修复 |
+| `{uriPrefix}/v1/stats` | GET | 节点存储统计 |
+| `{uriPrefix}/v1/gc` | POST | 孤儿 chunk 清理 |
 
 ---
 

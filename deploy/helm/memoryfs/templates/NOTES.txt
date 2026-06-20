@@ -9,25 +9,11 @@
    http://{{ $fullname }}-{{ $i }}.{{ $headless }}:{{ $port }}
 {{- end }}
 
-3. Cluster service (any ready node):
+3. Cluster service:
    http://{{ include "memoryfs.fullname" . }}:{{ .Values.service.httpPort }}
 
-{{- $uriPrefix := .Values.dashboard.uriPrefix -}}
-{{- if and (not $uriPrefix) .Values.dashboard.ingress.enabled -}}
-{{- $uriPrefix = .Values.dashboard.ingress.path -}}
-{{- end -}}
-{{- if $uriPrefix }}
-
-4. Web dashboard (management UI, same node image):
-   http://{{ include "memoryfs.fullname" . }}:{{ .Values.service.httpPort }}{{ $uriPrefix }}/dashboard
-{{- if .Values.dashboard.ingress.enabled }}
-   Ingress: http{{ if .Values.dashboard.ingress.tls }}s{{ end }}://{{ default "*" .Values.dashboard.ingress.host }}{{ $uriPrefix }}/dashboard
-{{- end }}
-{{- else }}
-
-4. Web dashboard (management UI, same node image):
-   http://{{ include "memoryfs.fullname" . }}:{{ .Values.service.httpPort }}/dashboard
-{{- end }}
+4. Web dashboard (via Service / port-forward):
+   http://{{ include "memoryfs.fullname" . }}:{{ .Values.service.httpPort }}{{ .Values.dashboard.uriPrefix }}/dashboard
 
 5. Ops scripts (from repo deploy/scripts):
    ./deploy/scripts/cluster-status.sh http://{{ include "memoryfs.fullname" . }}:{{ .Values.service.httpPort }}

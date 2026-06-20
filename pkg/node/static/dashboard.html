@@ -190,8 +190,9 @@
             <a id="link-overview" href="#">Overview API</a>
           </div>
           <p class="hint" style="margin-top:1rem">
-            通过 Ingress 暴露时，将 Helm <code>dashboard.uriPrefix</code> 与 Ingress path 设为相同值（如 <code>/memoryfs</code>）。
-            集群内探针仍可使用无前缀的 <code>/health</code> 与 <code>/metrics</code>。
+            默认经 Kubernetes Service 或 port-forward 访问，无需 Ingress。
+            集群内示例：<code>http://memoryfs.&lt;namespace&gt;.svc:8080/memoryfs/dashboard</code>。
+            探针仍使用无前缀的 <code>/health</code> 与 <code>/metrics</code>。
           </p>
         </div>
       </section>

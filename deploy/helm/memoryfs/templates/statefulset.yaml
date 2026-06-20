@@ -82,13 +82,9 @@ spec:
             - name: MEMORYFS_API_TOKEN
               value: {{ .Values.apiToken | quote }}
             {{- end }}
-            {{- $uriPrefix := .Values.dashboard.uriPrefix -}}
-            {{- if and (not $uriPrefix) .Values.dashboard.ingress.enabled -}}
-            {{- $uriPrefix = .Values.dashboard.ingress.path -}}
-            {{- end -}}
-            {{- if $uriPrefix }}
+            {{- if .Values.dashboard.uriPrefix }}
             - name: MEMORYFS_URI_PREFIX
-              value: {{ $uriPrefix | quote }}
+              value: {{ .Values.dashboard.uriPrefix | quote }}
             {{- end }}
           readinessProbe:
             httpGet:
