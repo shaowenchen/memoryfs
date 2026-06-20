@@ -10,7 +10,7 @@ on:
       platforms:
         description: "Target platforms"
         required: false
-        default: "linux/amd64,linux/arm64"
+        default: "linux/amd64"
 
 permissions:
   contents: read
@@ -72,16 +72,13 @@ jobs:
           username: "${{ secrets.ACR_USERNAME }}"
           password: "${{ secrets.ACR_PASSWORD }}"
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
       - name: Build and push memoryfs
         uses: docker/build-push-action@v6
         with:
-          platforms: ${{ inputs.platforms || 'linux/amd64,linux/arm64' }}
+          platforms: ${{ inputs.platforms || 'linux/amd64' }}
           push: true
           tags: docker.io/shaowenchen/memoryfs:latest
           file: Dockerfile
