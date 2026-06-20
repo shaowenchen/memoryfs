@@ -27,20 +27,45 @@ helm upgrade --install memoryfs \
 
 默认挂载目录 **`/mnt/memoryfs`**。`-nodes` 填要挂载的节点；只读写该节点本地 chunk 数据。
 
+**挂载容器必须一直运行**。容器退出后，宿主机上的目录会变成 stale mount，`ls`/`df` 会报 `Transport endpoint is not connected`。
+
 ```bash
+# 1. 清理旧的 stale 挂载（如有）
+bash deploy/scripts/unmount-stale.sh /memoryfs /memoryfs1 /memoryfs2 /mnt/memoryfs
+
+# 2. 创建宿主机目录
 mkdir -p /mnt/memoryfs
 
-nerdctl run -it --rm --privileged \
+# 3. 后台启动 mount（不要用 -it --rm，容器退出会 unmount）
+nerdctl pull shaowenchen/memoryfs:latest
+nerdctl run -d --privileged --name memoryfs-mount \
   --device /dev/fuse \
   -v /mnt/memoryfs:/mnt/memoryfs:shared \
   --network host \
+  --restart unless-stopped \
   shaowenchen/memoryfs:latest \
   mount -mount /mnt/memoryfs \
   -nodes http://10.0.0.3:8080 \
-  -f
+  -size-gb 32 -v -f
 ```
 
-也可逗号分隔多个 nodes 节点。
+查看日志与验证：
+
+```bash
+nerdctl logs -f memoryfs-mount
+df -h /mnt/memoryfs          # 只查当前挂载点，不要用 df | grep memoryfs
+ls /mnt/memoryfs
+echo test > /mnt/memoryfs/hello.txt
+```
+
+停止挂载：
+
+```bash
+nerdctl stop memoryfs-mount && nerdctl rm memoryfs-mount
+fusermount -u /mnt/memoryfs  # 或 bash deploy/scripts/unmount-stale.sh /mnt/memoryfs
+```
+
+也可逗号分隔多个 `-nodes` 节点。`-size-gb` 应与 Helm 的 `node.storageGB` 一致（供 `df` 显示容量）。
 
 ## 卸载
 

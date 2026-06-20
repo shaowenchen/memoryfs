@@ -17,15 +17,27 @@ import (
 // MemoryFS is the root FUSE node.
 type MemoryFS struct {
 	fs.Inode
-	store  meta.Backend
-	chunks *storage.ChunkStore
-	uid    uint32
-	gid    uint32
+	store     meta.Backend
+	chunks    *storage.ChunkStore
+	uid       uint32
+	gid       uint32
+	sizeBytes uint64
+	usedBytes func(context.Context) uint64
 }
 
 // NewRoot creates the root filesystem node.
-func NewRoot(store meta.Backend, chunks *storage.ChunkStore, uid, gid uint32) *MemoryFS {
-	return &MemoryFS{store: store, chunks: chunks, uid: uid, gid: gid}
+func NewRoot(store meta.Backend, chunks *storage.ChunkStore, uid, gid uint32, sizeBytes uint64, usedBytes func(context.Context) uint64) *MemoryFS {
+	if sizeBytes == 0 {
+		sizeBytes = 32 << 30
+	}
+	return &MemoryFS{
+		store:     store,
+		chunks:    chunks,
+		uid:       uid,
+		gid:       gid,
+		sizeBytes: sizeBytes,
+		usedBytes: usedBytes,
+	}
 }
 
 var (
@@ -38,9 +50,30 @@ var (
 	_ fs.NodeRmdirer      = (*MemoryFS)(nil)
 	_ fs.NodeRenamer      = (*MemoryFS)(nil)
 	_ fs.NodeSymlinker    = (*MemoryFS)(nil)
+	_ fs.NodeStatfser     = (*MemoryFS)(nil)
 )
 
 func (m *MemoryFS) rootIno() uint64 { return meta.RootIno() }
+
+func (m *MemoryFS) Statfs(ctx context.Context, out *fuse.StatfsOut) syscall.Errno {
+	const blockSize = 4096
+	total := m.sizeBytes
+	used := uint64(0)
+	if m.usedBytes != nil {
+		used = m.usedBytes(ctx)
+	}
+	if total < used {
+		total = used
+	}
+	free := total - used
+	out.Bsize = blockSize
+	out.Frsize = blockSize
+	out.Blocks = total / blockSize
+	out.Bfree = free / blockSize
+	out.Bavail = free / blockSize
+	out.NameLen = 255
+	return 0
+}
 
 func (m *MemoryFS) Getattr(ctx context.Context, fh fs.FileHandle, out *fuse.AttrOut) syscall.Errno {
 	attr, err := m.store.GetAttr(ctx, m.rootIno())
