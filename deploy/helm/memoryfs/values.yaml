@@ -1,12 +1,12 @@
 # Default values for MemoryFS Helm chart.
-# Recommended production: 3+ nodes, RF=2, tiered backend, PVC enabled.
+# Dev/test: emptyDir + memory backend. Enable node.persistence for PVC disk.
 
 replicaCount: 3
 
 image:
   repository: shaowenchen/memoryfs
   tag: latest
-  pullPolicy: IfNotPresent
+  pullPolicy: Always
 
 nameOverride: ""
 fullnameOverride: ""
@@ -19,9 +19,10 @@ serviceAccount:
 replicaFactor: 2
 
 node:
-  chunkBackend: tiered
+  # Auto when empty: memory (persistence off) / tiered (persistence on)
+  chunkBackend: ""
   memCacheMB: 512
-  diskQuotaGB: 100
+  diskQuotaGB: 0
   gcInterval: 5m
   flushInterval: 30s
   defaultTTL: "0"
@@ -38,7 +39,7 @@ node:
       memory: 4Gi
 
   persistence:
-    enabled: true
+    enabled: false
     storageClass: ""
     size: 100Gi
     accessModes:

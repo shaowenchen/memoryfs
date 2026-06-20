@@ -51,6 +51,17 @@ component: node
 {{- end }}
 {{- end }}
 
+{{- define "memoryfs.chunkBackend" -}}
+{{- $backend := .Values.node.chunkBackend -}}
+{{- if $backend -}}
+{{- $backend -}}
+{{- else if .Values.node.persistence.enabled -}}
+tiered
+{{- else -}}
+memory
+{{- end -}}
+{{- end }}
+
 {{- define "memoryfs.bootstrapJoinScript" -}}
 ORD="${HOSTNAME##*-}"
 export MEMORYFS_ID="${HOSTNAME}"

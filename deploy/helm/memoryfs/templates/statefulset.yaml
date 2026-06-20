@@ -61,7 +61,7 @@ spec:
             - name: MEMORYFS_CHUNK_DIR
               value: {{ .Values.node.chunkDir | quote }}
             - name: MEMORYFS_CHUNK_BACKEND
-              value: {{ .Values.node.chunkBackend | quote }}
+              value: {{ include "memoryfs.chunkBackend" . | quote }}
             - name: MEMORYFS_REPLICA_FACTOR
               value: {{ .Values.replicaFactor | quote }}
             - name: MEMORYFS_MEM_CACHE_MB
