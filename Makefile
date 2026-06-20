@@ -6,8 +6,10 @@ HELM_CHART = https://github.com/shaowenchen/memoryfs/releases/download/v$(VERSIO
 
 help:
 	@echo "Targets: proto build test tidy docker-build deploy-scripts"
-	@echo "  deploy-up     - start 3-node docker cluster"
-	@echo "  deploy-status - show cluster status"
+	@echo "  deploy-up       - start 3-node docker cluster"
+	@echo "  deploy-status   - show cluster status (status CLI)"
+	@echo "  status          - cluster storage status"
+	@echo "  benchmark       - storage throughput test"
 
 proto:
 	protoc --go_out=. --go_opt=module=github.com/shaowenchen/memoryfs \
@@ -19,6 +21,10 @@ build:
 		go build -o bin/node ./cmd/node
 	GO111MODULE=on CGO_ENABLED=0 GOOS=$${TARGETOS:-linux} GOARCH=$${TARGETARCH:-amd64} \
 		go build -o bin/mount ./cmd/mount
+	GO111MODULE=on CGO_ENABLED=0 GOOS=$${TARGETOS:-linux} GOARCH=$${TARGETARCH:-amd64} \
+		go build -o bin/status ./cmd/status
+	GO111MODULE=on CGO_ENABLED=0 GOOS=$${TARGETOS:-linux} GOARCH=$${TARGETARCH:-amd64} \
+		go build -o bin/benchmark ./cmd/benchmark
 
 test:
 	go test ./...
@@ -39,7 +45,13 @@ deploy-down:
 	docker compose -f deploy/docker-compose.cluster.yml down
 
 deploy-status: deploy-scripts
-	./deploy/scripts/cluster-status.sh http://127.0.0.1:8080
+	./bin/status -nodes http://127.0.0.1:8080 || ./deploy/scripts/cluster-status.sh http://127.0.0.1:8080
+
+status:
+	go run ./cmd/status -nodes http://127.0.0.1:8080
+
+benchmark:
+	go run ./cmd/benchmark -nodes http://127.0.0.1:8080 -writes 20 -reads 20 -workers 4
 
 helm-install:
 	helm upgrade --install memoryfs $(HELM_CHART) \

@@ -256,7 +256,9 @@ kubectl -n memoryfs exec memoryfs-0 -- tar -czf - /data > backup-node0.tar.gz
 
 | 脚本 | 用途 |
 |------|------|
-| `cluster-status.sh` | 集群健康、leader、各节点 stats |
+| `status`（CLI） | 集群存储状态、各节点 chunk/磁盘（推荐） |
+| `benchmark`（CLI） | Chunk 写读吞吐性能测试 |
+| `cluster-status.sh` | 集群健康、leader、各节点 stats（shell 版） |
 | `node-drain.sh` | 迁移 chunk 副本，准备下线 |
 | `node-ready.sh` | 标记 active + rebuild |
 | `node-leave.sh` | drain + 从集群移除 |

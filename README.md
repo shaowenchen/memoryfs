@@ -215,6 +215,28 @@ lifecycle:
 | `-uri-prefix` | `/memoryfs`（Helm 默认） | HTTP 路径前缀；裸机 `-uri-prefix` 空则根路径 |
 | `-api-token` | | 可选 API Bearer Token（保护写操作） |
 
+## 运维命令
+
+与 `node`、`mount` 同镜像，可直接使用：
+
+```bash
+# 查看集群存储状态（自动探测 /memoryfs 前缀）
+memoryfs status -nodes http://127.0.0.1:8080
+
+# JSON 输出
+memoryfs status -nodes http://127.0.0.1:8080 -json
+
+# 性能测试（4MiB chunk 写读吞吐）
+memoryfs benchmark -nodes http://127.0.0.1:8080 -writes 50 -reads 50 -workers 4
+```
+
+K8s 集群内：
+
+```bash
+kubectl run -it --rm mfctl --image=shaowenchen/memoryfs:latest --restart=Never -- \
+  status -nodes http://memoryfs.memoryfs.svc:8080
+```
+
 ## 运维面板
 
 与 node 共用同一镜像与 HTTP 服务。Helm 默认前缀 `/memoryfs`：
