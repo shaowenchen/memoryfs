@@ -28,9 +28,6 @@ var (
 	ErrInvalidName = errors.New("invalid name")
 )
 
-// ChunkSize is the default file chunk size (4 MiB).
-const ChunkSize = 4 << 20
-
 // Attr holds inode metadata.
 type Attr struct {
 	Ino    uint64   `json:"ino"`
@@ -500,11 +497,6 @@ func (s *LocalStore) ResolvePath(ctx context.Context, p string) (*Attr, error) {
 
 // RootIno returns the root inode number.
 func RootIno() uint64 { return rootIno }
-
-// ChunkID generates a chunk identifier.
-func ChunkID(ino uint64, index int) string {
-	return fmt.Sprintf("%d_%d", ino, index)
-}
 
 func checkName(name string) error {
 	if name == "" || name == "." || name == ".." {

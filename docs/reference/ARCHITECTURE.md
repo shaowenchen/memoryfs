@@ -2,7 +2,7 @@
 
 ## 概览
 
-MemoryFS 是分布式文件系统：元数据通过 **Raft** 强一致复制，文件内容切成 **4 MiB Chunk** 多副本存储在各节点本地磁盘。
+MemoryFS 是分布式文件系统：元数据通过 **Raft** 强一致复制，文件内容按 **64 MiB Chunk / 4 MiB Block** 分层，Block 多副本存储在各节点本地磁盘。
 
 ```
 FUSE/mount ──HTTP/gRPC──► Node 集群
@@ -55,6 +55,22 @@ StatefulSet 有序启动时的成员模型：
 **注意**：Raft 成员地址持久化在 `{data}/{id}/raft.db`。若 hostPath 残留旧端口（如 `:8081`）而进程已监听 `:19802`，会出现 endless election 且日志里 `connection refused :8081`。启动时会检测端口不一致并 **fail fast**；需在各节点删除 `/data/memoryfs/<instanceId>/` 下全部 Pod 目录后 `helm uninstall` 再装。临时重置单 Pod 可设 `MEMORYFS_RAFT_RESET=true`（仅清该 Pod 的 `raft.db`/`snapshots/`）。
 
 ## Chunk 存储
+
+参考 [JuiceFS 分层模型](https://juicefs.com/docs/zh/community/architecture/)，MemoryFS 将文件数据分为两层：
+
+| 层级 | 大小 | 作用 |
+|------|------|------|
+| **Chunk**（逻辑块） | 64 MiB | 按文件偏移定位，元数据 `attr.Chunks` 索引 |
+| **Block**（物理块） | 4 MiB | 节点间副本同步的最小单位 |
+
+```
+文件 offset
+  └─► Chunk (64 MiB) ──► Block ×16 (各 4 MiB) ──► RF 副本 PUT 到各节点
+```
+
+- 挂载客户端 **写缓冲**：小写入先缓存在内存，满 4 MiB 自动 flush，或 `fsync`/关闭文件时 flush 尾部块
+- 避免 2 字节写入触发跨节点 HTTP PUT（此前每写即同步）
+- 旧格式 chunk id `{ino}_{slice}` 仍可读（向后兼容）
 
 | 后端 | 说明 |
 |------|------|

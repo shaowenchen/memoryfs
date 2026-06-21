@@ -27,6 +27,7 @@ type ChunkStore struct {
 	replicaLookup ReplicaLookup
 	transport     transport.ChunkTransport
 	replicaFactor int
+	writers       sync.Map // ino -> *blockWriter
 }
 
 // NewChunkStore creates a chunk store with multi-protocol transport.
@@ -159,91 +160,134 @@ func (c *ChunkStore) Read(ctx context.Context, attr *meta.Attr, dest []byte, off
 		toRead = remaining
 	}
 
-	chunkIdx := int(offset / meta.ChunkSize)
-	chunkOff := int(offset % meta.ChunkSize)
 	written := 0
-
+	pos := offset
 	for written < int(toRead) {
-		chunkID := chunkIDFor(attr, chunkIdx)
-		data, err := c.readChunk(ctx, chunkID)
-		if err != nil {
-			return written, err
+		chunkIdx, blockIdx, blockOff := meta.LocateBlock(pos)
+		key := blockKey{chunkIdx: chunkIdx, blockIdx: blockIdx}
+
+		var blockData []byte
+		if w, ok := c.writers.Load(attr.Ino); ok {
+			buf := make([]byte, meta.BlockSize)
+			n := w.(*blockWriter).readBuffered(key, buf)
+			if n > 0 {
+				blockData = buf[:n]
+			}
 		}
-		n := copy(dest[written:], data[chunkOff:])
-		written += n
-		chunkIdx++
-		chunkOff = 0
+		if blockData == nil {
+			blockData = c.readBlock(ctx, attr, chunkIdx, blockIdx)
+		}
+
+		avail := meta.BlockSize - blockOff
+		want := int(toRead) - written
+		if want > avail {
+			want = avail
+		}
+		for i := 0; i < want; i++ {
+			if blockOff+i < len(blockData) {
+				dest[written+i] = blockData[blockOff+i]
+			}
+		}
+		written += want
+		pos += int64(want)
 	}
 	return written, nil
 }
 
-// Write writes data at offset, updating attr in place.
+// Write buffers data at offset and syncs full 4 MiB blocks to replica nodes.
 func (c *ChunkStore) Write(ctx context.Context, attr *meta.Attr, data []byte, offset int64) error {
-	if len(data) == 0 {
-		return nil
-	}
-	end := offset + int64(len(data))
-	if end > int64(attr.Size) {
-		attr.Size = uint64(end)
-	}
-
-	pos := 0
-	for pos < len(data) {
-		absOff := offset + int64(pos)
-		chunkIdx := int(absOff / meta.ChunkSize)
-		chunkOff := int(absOff % meta.ChunkSize)
-
-		chunkID := meta.ChunkID(attr.Ino, chunkIdx)
-		existing, _ := c.readChunk(ctx, chunkID)
-
-		buf := make([]byte, meta.ChunkSize)
-		copy(buf, existing)
-		n := copy(buf[chunkOff:], data[pos:])
-		payload := buf[:maxLen(chunkOff+n, len(existing))]
-		if err := c.writeChunk(ctx, chunkID, payload); err != nil {
-			return err
-		}
-		ensureChunk(attr, chunkIdx)
-		pos += n
-	}
-	return nil
+	return c.writerFor(attr.Ino).Write(ctx, attr, data, offset)
 }
 
-// Truncate resizes a file, removing trailing chunks if needed.
+// Truncate resizes a file, removing trailing blocks if needed.
 func (c *ChunkStore) Truncate(ctx context.Context, attr *meta.Attr, size uint64) error {
+	if err := c.FlushFile(ctx, attr.Ino); err != nil {
+		return err
+	}
 	oldSize := attr.Size
 	attr.Size = size
 	newChunks := chunkCount(size)
 	if newChunks < len(attr.Chunks) {
 		for i := newChunks; i < len(attr.Chunks); i++ {
-			_ = c.deleteChunk(ctx, attr.Chunks[i])
+			_ = c.deleteLogicalChunk(ctx, attr.Ino, i)
 		}
 		attr.Chunks = attr.Chunks[:newChunks]
 	}
-	if size < oldSize && size > 0 {
-		lastIdx := newChunks - 1
-		if lastIdx >= 0 && lastIdx < len(attr.Chunks) {
-			chunkID := attr.Chunks[lastIdx]
-			data, err := c.readChunk(ctx, chunkID)
-			if err == nil {
-				trim := int(size % meta.ChunkSize)
-				if trim == 0 && size > 0 {
-					trim = meta.ChunkSize
-				}
-				if trim < len(data) {
-					_ = c.writeChunk(ctx, chunkID, data[:trim])
-				}
-			}
+	if size < oldSize {
+		_ = c.deleteBlocksFrom(ctx, attr.Ino, size, oldSize)
+	}
+	if size > 0 {
+		lastChunk := int((size - 1) / meta.ChunkSize)
+		ensureChunk(attr, lastChunk)
+	}
+	return nil
+}
+
+// DeleteChunks removes all blocks for an inode.
+func (c *ChunkStore) DeleteChunks(ctx context.Context, attr *meta.Attr) {
+	_ = c.FlushFile(ctx, attr.Ino)
+	c.writers.Delete(attr.Ino)
+	maxBlocks := blockCount(attr.Size)
+	for global := 0; global < maxBlocks; global++ {
+		chunkIdx := global / meta.BlocksPerChunk
+		blockIdx := global % meta.BlocksPerChunk
+		_ = c.deleteBlock(ctx, attr.Ino, chunkIdx, blockIdx)
+	}
+}
+
+func (c *ChunkStore) readBlock(ctx context.Context, attr *meta.Attr, chunkIdx, blockIdx int) []byte {
+	blockID := meta.BlockID(attr.Ino, chunkIdx, blockIdx)
+	if data, err := c.readChunk(ctx, blockID); err == nil {
+		return data
+	}
+	legacyID := meta.LegacyChunkID(attr.Ino, meta.LegacyBlockIndex(chunkIdx, blockIdx))
+	if data, err := c.readChunk(ctx, legacyID); err == nil {
+		return data
+	}
+	return nil
+}
+
+func (c *ChunkStore) deleteLogicalChunk(ctx context.Context, ino uint64, chunkIdx int) error {
+	for blockIdx := 0; blockIdx < meta.BlocksPerChunk; blockIdx++ {
+		if err := c.deleteBlock(ctx, ino, chunkIdx, blockIdx); err != nil {
+			return err
 		}
 	}
 	return nil
 }
 
-// DeleteChunks removes all chunks for an inode.
-func (c *ChunkStore) DeleteChunks(ctx context.Context, attr *meta.Attr) {
-	for _, id := range attr.Chunks {
-		_ = c.deleteChunk(ctx, id)
+func (c *ChunkStore) deleteBlock(ctx context.Context, ino uint64, chunkIdx, blockIdx int) error {
+	_ = c.deleteChunk(ctx, meta.BlockID(ino, chunkIdx, blockIdx))
+	_ = c.deleteChunk(ctx, meta.LegacyChunkID(ino, meta.LegacyBlockIndex(chunkIdx, blockIdx)))
+	return nil
+}
+
+func (c *ChunkStore) deleteBlocksFrom(ctx context.Context, ino uint64, newSize, oldSize uint64) error {
+	for global := blockCount(newSize); global < blockCount(oldSize); global++ {
+		chunkIdx := global / meta.BlocksPerChunk
+		blockIdx := global % meta.BlocksPerChunk
+		_ = c.deleteBlock(ctx, ino, chunkIdx, blockIdx)
 	}
+	if newSize == 0 {
+		return nil
+	}
+	chunkIdx, blockIdx, _ := meta.LocateBlock(int64(newSize) - 1)
+	blockID := meta.BlockID(ino, chunkIdx, blockIdx)
+	data, err := c.readChunk(ctx, blockID)
+	if err != nil {
+		legacyID := meta.LegacyChunkID(ino, meta.LegacyBlockIndex(chunkIdx, blockIdx))
+		data, err = c.readChunk(ctx, legacyID)
+	}
+	if err == nil {
+		trim := int(newSize % meta.BlockSize)
+		if trim == 0 {
+			trim = meta.BlockSize
+		}
+		if trim < len(data) {
+			_ = c.writeChunk(ctx, blockID, data[:trim])
+		}
+	}
+	return nil
 }
 
 func (c *ChunkStore) readChunk(ctx context.Context, chunkID string) ([]byte, error) {
@@ -305,13 +349,6 @@ func (c *ChunkStore) deleteChunk(ctx context.Context, chunkID string) error {
 	return last
 }
 
-func chunkIDFor(attr *meta.Attr, idx int) string {
-	if idx < len(attr.Chunks) && attr.Chunks[idx] != "" {
-		return attr.Chunks[idx]
-	}
-	return meta.ChunkID(attr.Ino, idx)
-}
-
 func ensureChunk(attr *meta.Attr, idx int) {
 	id := meta.ChunkID(attr.Ino, idx)
 	for len(attr.Chunks) <= idx {
@@ -327,11 +364,11 @@ func chunkCount(size uint64) int {
 	return int((size-1)/meta.ChunkSize) + 1
 }
 
-func maxLen(a, b int) int {
-	if a > b {
-		return a
+func blockCount(size uint64) int {
+	if size == 0 {
+		return 0
 	}
-	return b
+	return int((size-1)/meta.BlockSize) + 1
 }
 
 func (c *ChunkStore) selectNode(ctx context.Context, chunkID string) (string, error) {

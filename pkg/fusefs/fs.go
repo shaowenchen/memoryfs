@@ -321,6 +321,8 @@ var (
 	_ fs.NodeReader    = (*File)(nil)
 	_ fs.NodeWriter    = (*File)(nil)
 	_ fs.NodeSetattrer = (*File)(nil)
+	_ fs.NodeFsyncer   = (*File)(nil)
+	_ fs.NodeReleaser  = (*File)(nil)
 )
 
 func (f *File) Getattr(ctx context.Context, fh fs.FileHandle, out *fuse.AttrOut) syscall.Errno {
@@ -367,6 +369,21 @@ func (f *File) Write(ctx context.Context, fh fs.FileHandle, data []byte, off int
 		return 0, syscall.EIO
 	}
 	return uint32(len(data)), 0
+}
+
+func (f *File) Fsync(ctx context.Context, fh fs.FileHandle, flags uint32) syscall.Errno {
+	if err := f.chunks.FlushFile(ctx, f.ino); err != nil {
+		mountlog.Errorf("fuse fsync ino=%d: %v", f.ino, err)
+		return syscall.EIO
+	}
+	return 0
+}
+
+func (f *File) Release(ctx context.Context, fh fs.FileHandle) syscall.Errno {
+	if err := f.chunks.FlushFile(ctx, f.ino); err != nil {
+		mountlog.Warnf("fuse release flush ino=%d: %v", f.ino, err)
+	}
+	return 0
 }
 
 func (f *File) Setattr(ctx context.Context, fh fs.FileHandle, in *fuse.SetAttrIn, out *fuse.AttrOut) syscall.Errno {
