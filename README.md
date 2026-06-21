@@ -51,10 +51,16 @@ nerdctl run -d --privileged --name memoryfs-fuse \
 
 ### 4. 卸载
 
+卸载 FUSE：
+
 ```bash
 nerdctl rm -f memoryfs-fuse
 fusermount -u /mnt/memoryfs
+```
 
+卸载集群：
+
+```bash
 helm uninstall memoryfs -n memoryfs
 ```
 
