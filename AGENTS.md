@@ -1,73 +1,83 @@
 # MemoryFS — Agent Guide
 
-本文件是 AI 编程助手的项目入口。遵循 [Superpowers 软件工程方法论](https://www.chenshaowen.com/blog/superpowers-software-engineering-methodology-for-ai.html)。
+AI 编程助手项目入口。遵循 [Superpowers 方法论](https://www.chenshaowen.com/blog/superpowers-software-engineering-methodology-for-ai.html)。
 
 ## 优先级
 
-1. **用户显式指令**（本文件、直接请求）— 最高
-2. **`.cursor/skills/` 中的 Superpowers skills** — 覆盖默认行为
-3. **默认系统提示** — 最低
+1. 用户显式指令
+2. `.cursor/skills/` Superpowers skills
+3. 默认系统提示
 
-## 项目概览
-
-MemoryFS 是分布式文件系统：Raft 元数据 + 多副本 Chunk，支持 FUSE 挂载与 HTTP 管理面板。
-
-| 层级 | 路径 | 说明 |
-|------|------|------|
-| 命令入口 | `cmd/node`, `cmd/mount`, `cmd/status`, `cmd/benchmark` | 二进制入口 |
-| 核心库 | `pkg/meta`, `pkg/chunk`, `pkg/raftnode`, `pkg/service` | 元数据、存储、Raft、业务 |
-| 客户端 | `pkg/client`, `pkg/fusefs`, `pkg/storage` | FUSE 与 HTTP 客户端 |
-| 传输 | `pkg/transport` | HTTP / gRPC / RDMA chunk 传输 |
-| 部署 | `deploy/helm`, `deploy/scripts` | Helm Chart 与运维脚本 |
-| 文档 | `docs/` | 架构、CLI、用例 |
-| 设计规格 | `docs/superpowers/specs/` | 功能设计文档 |
-| 实现计划 | `docs/superpowers/plans/` | 细粒度任务计划 |
-| 进度 | `.superpowers/sdd/` | SDD 执行进度 |
-
-## 开发工作流（Superpowers）
+## 仓库结构
 
 ```
-brainstorming → writing-plans → TDD 实现 → verification → commit
+memoryfs/
+├── cmd/                    # 二进制入口（node, mount, status, benchmark）
+├── pkg/                    # 核心库
+├── api/                    # protobuf / gRPC 定义
+├── deploy/                 # Helm + 运维脚本
+├── docs/
+│   ├── reference/          # 稳定参考文档
+│   └── superpowers/        # 设计 specs + 实现 plans
+├── .cursor/skills/         # Agent 行为规范
+├── .superpowers/sdd/       # SDD 执行进度
+├── AGENTS.md               # 本文件
+└── CONTRIBUTING.md         # 贡献流程
+```
+
+## 包职责
+
+| 包 | 职责 |
+|----|------|
+| `pkg/meta`, `pkg/raftnode` | 元数据与 Raft |
+| `pkg/service` | 节点业务逻辑 |
+| `pkg/chunk` | 本地 chunk 存储 |
+| `pkg/client`, `pkg/fusefs`, `pkg/storage` | FUSE 客户端 |
+| `pkg/transport` | chunk HTTP/gRPC/RDMA |
+| `pkg/mountlog` | mount 客户端日志 |
+
+## 工作流
+
+```
+brainstorming → specs/ → writing-plans → plans/ → TDD → verification → commit
 ```
 
 | 阶段 | Skill | 产出 |
 |------|-------|------|
-| 设计 | `brainstorming` | `docs/superpowers/specs/YYYY-MM-DD-<topic>-design.md` |
-| 计划 | `writing-plans` | `docs/superpowers/plans/YYYY-MM-DD-<topic>.md` |
-| 实现 | `test-driven-development` | 先写失败测试，再写最少代码 |
+| 设计 | `brainstorming` | `docs/superpowers/specs/YYYY-MM-DD-*-design.md` |
+| 计划 | `writing-plans` | `docs/superpowers/plans/YYYY-MM-DD-*.md` |
+| 实现 | `test-driven-development` | 失败测试先行 |
 | 调试 | `systematic-debugging` | 四阶段根因分析 |
 | 完成 | `verification-before-completion` | 有证据才宣称完成 |
+| 收尾 | `finishing-a-development-branch` | 合并/PR 决策 |
 
-**HARD-GATE：** 新功能/行为变更在用户批准设计之前，禁止写实现代码。
+**HARD-GATE：** 新功能在用户批准设计前禁止写实现代码。
 
 ## 全局约束
 
-- **语言**：Go 1.22+，遵循现有 `pkg/` 包布局
-- **测试**：`go test ./...`；新行为必须先有失败测试
-- **提交**：修复/功能完成后 commit；用户未要求时不 push
-- **范围**：最小 diff，不重构无关代码
-- **FUSE mount**：客户端用 HTTP chunk I/O；节点 URL 需带 URI prefix（Helm 默认 `/memoryfs`）
-- **文档**：设计/计划放 `docs/superpowers/`；架构细节见 `docs/ARCHITECTURE.md`
+- Go 1.22+，`go test ./...` 必须通过
+- 最小 diff，匹配现有 `pkg/` 风格
+- FUSE mount：HTTP-only chunk；URI prefix 默认 `/memoryfs`
+- 基准架构见 `docs/superpowers/specs/2026-06-20-memoryfs-system-design.md`
 
 ## 常用命令
 
 ```bash
-go test ./...                          # 全量测试
-go build -o bin/node ./cmd/node        # 编译节点
-go build -o bin/mount ./cmd/mount      # 编译 FUSE 客户端
-make help                              # Makefile 目标
-helm template deploy/helm/memoryfs     # 渲染 Chart
+make verify                              # test + build（提交前）
+go test ./pkg/<pkg>/... -run Test -v     # 单包测试
+helm template deploy/helm/memoryfs         # 渲染 Chart
+nerdctl logs -f memoryfs-mount           # mount 排查
 ```
 
 ## 关键文档
 
-- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — 架构与协议
-- [docs/CLI.md](docs/CLI.md) — CLI 参数
-- [deploy/README.md](deploy/README.md) — Helm 部署
-- [docs/superpowers/README.md](docs/superpowers/README.md) — Superpowers 工作流说明
+- [docs/reference/ARCHITECTURE.md](docs/reference/ARCHITECTURE.md)
+- [docs/reference/MOUNT.md](docs/reference/MOUNT.md)
+- [deploy/README.md](deploy/README.md)
+- [docs/superpowers/README.md](docs/superpowers/README.md)
 
-## Cursor 集成
+## Cursor
 
-- Bootstrap rule：`.cursor/rules/using-superpowers.mdc`（会话启动时加载）
-- 项目 skills：`.cursor/skills/*/SKILL.md`
-- 安装官方 Superpowers 插件（可选）：Agent 聊天中 `/add-plugin superpowers`
+- Bootstrap：`.cursor/rules/using-superpowers.mdc`
+- Skills：`.cursor/skills/*/SKILL.md`
+- 可选插件：`/add-plugin superpowers`

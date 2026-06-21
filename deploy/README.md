@@ -61,9 +61,9 @@ helm upgrade --install memoryfs "${CHART}" \
 
 - `replicaCount` — 节点数（每 K8s 节点最多 1 个 Pod）
 - `replicaFactor` — 数据副本数
-- `node.storageGB` — 每节点最大存储（GB）（Pod 内存规则见 [docs/ARCHITECTURE.md](../docs/ARCHITECTURE.md#资源与-storagegb)）
+- `node.storageGB` — 每节点最大存储（GB）（Pod 内存规则见 [docs/reference/ARCHITECTURE.md](../docs/reference/ARCHITECTURE.md#资源与-storagegb)）
 
-网络与 RDMA 见 [docs/ARCHITECTURE.md](../docs/ARCHITECTURE.md#kubernetes-部署)。
+网络与 RDMA 见 [docs/reference/ARCHITECTURE.md](../docs/reference/ARCHITECTURE.md#kubernetes-部署)。
 
 ### 挂载
 
@@ -371,4 +371,4 @@ helm upgrade --install memoryfs "${CHART}" -n memoryfs --create-namespace
 | 磁盘满 | 调整 quota；`-max-file-age`；手动 GC |
 | 扩容后 mount 不可见新节点 | 重启 mount 或换 nodes 节点；客户端启动时会刷新 `/v1/cluster/nodes` |
 
-更多场景见 [docs/USECASES.md](../docs/USECASES.md)。
+更多场景见 [docs/reference/USECASES.md](../docs/reference/USECASES.md)。

@@ -11,7 +11,7 @@ description: MUST use before any creative work — new features, behavior change
 
 ## Checklist
 
-1. 探索项目上下文（AGENTS.md、docs/ARCHITECTURE.md、相关 pkg/、git log）
+1. 探索项目上下文（AGENTS.md、docs/reference/ARCHITECTURE.md、相关 pkg/、git log）
 2. 一次只问一个澄清问题（目的、约束、成功标准）
 3. 提出 2–3 种方案 + 权衡 + 推荐
 4. 分块展示设计，每块等用户确认

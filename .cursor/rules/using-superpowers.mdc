@@ -29,6 +29,8 @@ alwaysApply: true
 | 写/改 Go 代码 | `test-driven-development` + `memoryfs-development` |
 | Bug / 卡住 / 报错 | `systematic-debugging` |
 | 「修好了」「完成了」 | `verification-before-completion` |
+| 计划已批准，开始实现 | `executing-plans` 或 subagent SDD |
+| 全部任务完成 | `finishing-a-development-branch` |
 
 ## Red Flags（立即停止并读 skill）
 

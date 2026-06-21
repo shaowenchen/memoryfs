@@ -39,7 +39,7 @@ go test ./... -count=1
 - Chart：`deploy/helm/memoryfs/`
 - 节点脚本：`deploy/scripts/node-start.sh`
 - Mount 脚本：`deploy/scripts/mount-start.sh`
-- 文档：`deploy/README.md`、`docs/ARCHITECTURE.md`
+- 文档：`deploy/README.md`、`docs/reference/`
 
 ## 日志
 
