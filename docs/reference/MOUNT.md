@@ -2,7 +2,8 @@
 
 默认挂载目录 **`/mnt/memoryfs`**。
 
-- **任意节点可挂载**：`-nodes` 填集群中任一节点（可逗号分隔多个），客户端会自动发现全部节点
+- **任意节点可挂载**：`-nodes` 填集群中任一节点的 **host IP:19800**（可逗号分隔多个），客户端会自动发现全部节点
+- 节点注册到集群的是 **宿主机 IP**，不是 K8s 内部 DNS（宿主机上 nerdctl 无法解析 `*.svc.cluster.local`）
 - **全集群数据可见**：元数据在各节点；chunk 按 registry 副本位置从对应数据节点直接读取
 - **多节点高可用**：多个 seed URL，读写会尝试其他副本/节点
 
@@ -57,10 +58,9 @@ fusermount -u /mnt/memoryfs
 
 | 现象 | 处理 |
 |------|------|
-| Transport endpoint not connected | mount 容器已退出；清理 stale 后重启 |
+| `connection refused` / DNS `server misbehaving` | 节点列表含 `*.svc.cluster.local` 说明注册地址不对；升级含 host IP 修复的镜像后 **重启全部 Pod**（follower 会 re-join 刷新地址），或清数据重装 |
 | Operation not supported | 拉最新镜像（需 FUSE Open 支持） |
 | write hang / 失败 | `nerdctl logs` 看 chunk PUT；确认 URI prefix `/memoryfs` |
-| connection refused | 检查节点 Pod、`curl http://<node>:19800/health` |
 
 **日志级别：**
 

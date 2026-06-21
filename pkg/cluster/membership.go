@@ -41,8 +41,14 @@ func (m *Membership) Admit(_ context.Context, member Member) ([]Member, error) {
 	if member.ID == "" || member.Raft == "" || member.HTTP == "" {
 		return nil, fmt.Errorf("member id, raft, and http are required")
 	}
-	if err := m.raft.AddVoter(member.ID, member.Raft); err != nil {
+	has, err := m.raft.HasServer(member.ID)
+	if err != nil {
 		return nil, err
+	}
+	if !has {
+		if err := m.raft.AddVoter(member.ID, member.Raft); err != nil {
+			return nil, err
+		}
 	}
 	if err := batch(m.raft.KV(), registerOps(member)); err != nil {
 		return nil, err

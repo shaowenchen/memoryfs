@@ -35,7 +35,7 @@
 | **StatefulSet** | Pod 有稳定 DNS（`pod-0.headless`），Raft 成员身份不变 |
 | **3 节点起步** | Raft 容忍 1 节点故障；RF=2 时 chunk 可丢 1 副本 |
 | **tiered / buffered** | 热读走内存；`diskSync` 开启时定时落盘到 hostPath |
-| **Headless Service** | 节点间 `-advertise-http/raft` 使用稳定域名 |
+| **Headless Service** | Pod 内 join 用 DNS 找 leader；**对外注册** `-advertise-http/raft` 用节点 **host IP**（供宿主机 FUSE 等集群外访问） |
 | **PDB minAvailable=2** | 滚动更新/节点维护时保持 quorum |
 | **preStop drain** | 缩容/重启前把本地 chunk 复制到 peer |
 
