@@ -27,4 +27,4 @@ COPY deploy/scripts/node-start.sh /app/scripts/node-start.sh
 RUN chmod +x /app/entrypoint.sh /app/node /app/mount /app/scripts/node-start.sh
 
 ENTRYPOINT ["/app/entrypoint.sh"]
-CMD ["node", "-standalone", "-id", "n1", "-http", ":8080", "-data", "/data"]
+CMD ["node", "-standalone", "-id", "n1", "-http", ":19800", "-data", "/data"]

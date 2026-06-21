@@ -8,6 +8,7 @@ import (
 	"github.com/shaowenchen/memoryfs/pkg/kv"
 	"github.com/shaowenchen/memoryfs/pkg/lifecycle"
 	"github.com/shaowenchen/memoryfs/pkg/meta"
+	"github.com/shaowenchen/memoryfs/pkg/ports"
 	"github.com/shaowenchen/memoryfs/pkg/raftnode"
 	"github.com/shaowenchen/memoryfs/pkg/transport"
 )
@@ -25,7 +26,7 @@ func testStandaloneService(t *testing.T) *Service {
 	}
 	return New(Config{
 		NodeID:        "n1",
-		NodeHTTP:      "http://127.0.0.1:8080",
+		NodeHTTP:      ports.DefaultHTTPURL(),
 		RaftNode:      rn,
 		Meta:          metaStore,
 		Chunks:        chunk.NewMemoryStore(),
@@ -38,7 +39,7 @@ func testStandaloneService(t *testing.T) *Service {
 
 func TestRecordChunkRegistryStandalone(t *testing.T) {
 	svc := testStandaloneService(t)
-	if err := svc.RecordChunkRegistry(context.Background(), "1_0", []string{"http://127.0.0.1:8080"}); err != nil {
+	if err := svc.RecordChunkRegistry(context.Background(), "1_0", []string{ports.DefaultHTTPURL()}); err != nil {
 		t.Fatalf("record registry: %v", err)
 	}
 	loc, err := svc.cfg.Registry.Get("1_0")

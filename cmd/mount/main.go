@@ -16,9 +16,10 @@ import (
 	"github.com/hanwen/go-fuse/v2/fs"
 	"github.com/hanwen/go-fuse/v2/fuse"
 
-	"github.com/shaowenchen/memoryfs/pkg/chunk"
+	"github.com/shaowenchen/memoryfs/pkg/ports"
 	"github.com/shaowenchen/memoryfs/pkg/cli"
 	"github.com/shaowenchen/memoryfs/pkg/client"
+	"github.com/shaowenchen/memoryfs/pkg/chunk"
 	"github.com/shaowenchen/memoryfs/pkg/fusefs"
 	"github.com/shaowenchen/memoryfs/pkg/mountlog"
 	"github.com/shaowenchen/memoryfs/pkg/service"
@@ -42,7 +43,7 @@ func main() {
 		log.Fatal("mount point is required: -mount /path/to/mount")
 	}
 	if *nodes == "" {
-		log.Fatal("nodes is required: -nodes http://127.0.0.1:8080")
+		log.Fatal("nodes is required: -nodes " + ports.DefaultHTTPURL())
 	}
 
 	var nodeList []string

@@ -97,7 +97,7 @@ volumeMounts:
 lifecycle:
   preStop:
     exec:
-      command: ["curl", "-X", "POST", "http://localhost:8080/v1/lifecycle/drain"]
+      command: ["curl", "-X", "POST", "http://localhost:19800/v1/lifecycle/drain"]
 ```
 
 **要点**：
@@ -115,7 +115,7 @@ lifecycle:
 **推荐配置**：
 ```bash
 node -chunk-backend disk -disk-quota-gb 500 -replica-factor 2
-mount -nodes http://n1:8080,http://n2:8080 -replica-factor 2
+mount -nodes http://n1:19800,http://n2:19800 -replica-factor 2
 ```
 
 **要点**：
@@ -138,8 +138,8 @@ mount -nodes http://n1:8080,http://n2:8080 -replica-factor 2
 
 示例：
 ```bash
-curl -s http://127.0.0.1:8080/v1/stats | jq
-curl -X POST http://127.0.0.1:8080/v1/gc
+curl -s http://127.0.0.1:19800/v1/stats | jq
+curl -X POST http://127.0.0.1:19800/v1/gc
 ```
 
 ---

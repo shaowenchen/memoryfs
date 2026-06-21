@@ -11,6 +11,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
+	"github.com/shaowenchen/memoryfs/pkg/ports"
 	pb "github.com/shaowenchen/memoryfs/api/memoryfs/v1"
 )
 
@@ -109,15 +110,14 @@ func normalizeGRPC(nodeURL string) string {
 		addr = addr[:idx]
 	}
 	if !strings.Contains(addr, ":") {
-		return addr + ":9090"
+		return addr + ":" + ports.GRPC
 	}
 	host, port, ok := strings.Cut(addr, ":")
 	if !ok {
 		return addr
 	}
-	// Map http port 8080 -> grpc 9090 when using http URL.
-	if port == "8080" {
-		return host + ":9090"
+	if port == ports.HTTP {
+		return host + ":" + ports.GRPC
 	}
 	return addr
 }

@@ -31,7 +31,7 @@ nerdctl run -d --privileged --name memoryfs-mount \
   --restart unless-stopped \
   shaowenchen/memoryfs:latest \
   mount -mount /mnt/memoryfs \
-  -nodes http://10.0.0.3:8080,http://10.0.0.4:8080 \
+  -nodes http://<node-a-ip>:19800,http://<node-b-ip>:19800 \
   -size-gb 32 -v -f
 ```
 
@@ -60,7 +60,7 @@ fusermount -u /mnt/memoryfs
 | Transport endpoint not connected | mount 容器已退出；清理 stale 后重启 |
 | Operation not supported | 拉最新镜像（需 FUSE Open 支持） |
 | write hang / 失败 | `nerdctl logs` 看 chunk PUT；确认 URI prefix `/memoryfs` |
-| connection refused | 检查节点 Pod、`curl http://<node>:8080/health` |
+| connection refused | 检查节点 Pod、`curl http://<node>:19800/health` |
 
 **日志级别：**
 

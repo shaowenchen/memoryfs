@@ -79,10 +79,10 @@ apiToken: ""
 
 service:
   type: ClusterIP
-  httpPort: 8080
-  grpcPort: 9090
-  raftPort: 8081
-  rdmaPort: 9092
+  httpPort: 19800
+  grpcPort: 19801
+  raftPort: 19802
+  rdmaPort: 19803
 
 nodeSelector:
   memoryfs.io/node: "true"

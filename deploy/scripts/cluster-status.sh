@@ -4,7 +4,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=common.sh
 source "${SCRIPT_DIR}/common.sh"
 
-SEED="${1:-http://127.0.0.1:8080}"
+SEED="${1:-http://127.0.0.1:19800}"
 
 echo "== MemoryFS cluster status =="
 echo "Seed node: ${SEED}"

@@ -42,13 +42,13 @@ deploy-scripts:
 	chmod +x deploy/scripts/*.sh
 
 deploy-status: deploy-scripts
-	./bin/status -nodes http://127.0.0.1:8080 || ./deploy/scripts/cluster-status.sh http://127.0.0.1:8080
+	./bin/status -nodes http://127.0.0.1:19800 || ./deploy/scripts/cluster-status.sh http://127.0.0.1:19800
 
 status:
-	go run ./cmd/status -nodes http://127.0.0.1:8080
+	go run ./cmd/status -nodes http://127.0.0.1:19800
 
 benchmark:
-	go run ./cmd/benchmark -nodes http://127.0.0.1:8080 -writes 20 -reads 20 -workers 4
+	go run ./cmd/benchmark -nodes http://127.0.0.1:19800 -writes 20 -reads 20 -workers 4
 
 helm-install:
 	helm upgrade --install memoryfs $(HELM_CHART) \
@@ -69,7 +69,7 @@ helm-template:
 
 # Local dev shortcuts
 node:
-	go run ./cmd/node -standalone -id n1 -http :8080 -grpc :9090 -data ./data
+	go run ./cmd/node -standalone -id n1 -http :19800 -grpc :19801 -data ./data
 
 mount:
-	go run ./cmd/mount -mount /tmp/memoryfs -nodes http://127.0.0.1:8080 -f
+	go run ./cmd/mount -mount /tmp/memoryfs -nodes http://127.0.0.1:19800 -f

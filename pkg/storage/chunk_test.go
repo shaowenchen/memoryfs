@@ -21,24 +21,24 @@ func (f *fakeReplicaLookup) ChunkReplicas(_ context.Context, chunkID string) ([]
 
 func TestNodesForChunkUsesRegistryReplicas(t *testing.T) {
 	c := &ChunkStore{
-		nodes:         []string{"http://n1:8080/memoryfs", "http://n2:8080/memoryfs"},
+		nodes:         []string{"http://n1:19800/memoryfs", "http://n2:19800/memoryfs"},
 		uriPrefix:     "/memoryfs",
 		replicaFactor: 2,
 		replicaLookup: &fakeReplicaLookup{
 			replicas: map[string][]string{
-				"1_0": {"http://n2:8080", "http://n3:8080"},
+				"1_0": {"http://n2:19800", "http://n3:19800"},
 			},
 		},
 	}
 	order := c.nodesForChunk(context.Background(), "1_0")
-	if len(order) != 2 || order[0] != "http://n2:8080/memoryfs" || order[1] != "http://n3:8080/memoryfs" {
+	if len(order) != 2 || order[0] != "http://n2:19800/memoryfs" || order[1] != "http://n3:19800/memoryfs" {
 		t.Fatalf("expected registry replicas with prefix, got %v", order)
 	}
 }
 
 func TestNodesForChunkFallsBackToHashSelect(t *testing.T) {
 	c := &ChunkStore{
-		nodes:         []string{"http://n1:8080/memoryfs", "http://n2:8080/memoryfs"},
+		nodes:         []string{"http://n1:19800/memoryfs", "http://n2:19800/memoryfs"},
 		uriPrefix:     "/memoryfs",
 		replicaFactor: 2,
 		replicaLookup: &fakeReplicaLookup{replicas: map[string][]string{}},
@@ -51,10 +51,10 @@ func TestNodesForChunkFallsBackToHashSelect(t *testing.T) {
 
 func TestRefreshNodesMergesDiscovered(t *testing.T) {
 	c := &ChunkStore{
-		seeds: []string{"http://seed:8080/memoryfs"},
-		nodes: []string{"http://seed:8080/memoryfs"},
+		seeds: []string{"http://seed:19800/memoryfs"},
+		nodes: []string{"http://seed:19800/memoryfs"},
 		meta: &fakeMeta{
-			nodes: []string{"http://n1:8080/memoryfs", "http://n2:8080/memoryfs"},
+			nodes: []string{"http://n1:19800/memoryfs", "http://n2:19800/memoryfs"},
 		},
 	}
 	if err := c.RefreshNodes(context.Background()); err != nil {
@@ -67,8 +67,8 @@ func TestRefreshNodesMergesDiscovered(t *testing.T) {
 }
 
 func TestMergeNodeURLs(t *testing.T) {
-	got := mergeNodeURLs([]string{"http://a:8080"}, []string{"http://b:8080", "http://a:8080"})
-	if len(got) != 2 || got[0] != "http://a:8080" || got[1] != "http://b:8080" {
+	got := mergeNodeURLs([]string{"http://a:19800"}, []string{"http://b:19800", "http://a:19800"})
+	if len(got) != 2 || got[0] != "http://a:19800" || got[1] != "http://b:19800" {
 		t.Fatalf("unexpected merge: %v", got)
 	}
 }

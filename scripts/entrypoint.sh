@@ -6,11 +6,11 @@ if [ -z "$cmd" ]; then
   echo "Usage: memoryfs {node|node-env|mount|status|benchmark} [flags]"
   echo ""
   echo "Examples:"
-  echo "  memoryfs node -standalone -id n1 -http :8080 -data /data"
+  echo "  memoryfs node -standalone -id n1 -http :19800 -data /data"
   echo "  memoryfs node-env   # start node from MEMORYFS_* env vars"
-  echo "  memoryfs mount -mount /mnt/memoryfs -nodes http://node:8080 -f"
-  echo "  memoryfs status -nodes http://127.0.0.1:8080"
-  echo "  memoryfs benchmark -nodes http://127.0.0.1:8080 -writes 50 -reads 50"
+  echo "  memoryfs mount -mount /mnt/memoryfs -nodes http://<node-ip>:19800 -f"
+  echo "  memoryfs status -nodes http://127.0.0.1:19800"
+  echo "  memoryfs benchmark -nodes http://127.0.0.1:19800 -writes 50 -reads 50"
   exit 1
 fi
 

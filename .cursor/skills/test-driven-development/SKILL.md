@@ -30,8 +30,8 @@ NO PRODUCTION CODE WITHOUT A FAILING TEST FIRST
 
 ```go
 func TestNormalizeGRPCStripsPath(t *testing.T) {
-    got := normalizeGRPC("http://10.0.0.1:8080/memoryfs")
-    want := "10.0.0.1:9090"
+    got := normalizeGRPC("http://127.0.0.1:19800/memoryfs")
+    want := "127.0.0.1:19801"
     if got != want {
         t.Fatalf("got %q want %q", got, want)
     }

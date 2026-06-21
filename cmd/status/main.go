@@ -9,10 +9,11 @@ import (
 	"time"
 
 	"github.com/shaowenchen/memoryfs/pkg/cli"
+	"github.com/shaowenchen/memoryfs/pkg/ports"
 )
 
 func main() {
-	seed := flag.String("nodes", envOr("MEMORYFS_NODES", "http://127.0.0.1:8080"), "seed node HTTP URL")
+	seed := flag.String("nodes", envOr("MEMORYFS_NODES", ports.DefaultHTTPURL()), "seed node HTTP URL")
 	uriPrefix := flag.String("uri-prefix", envOr("MEMORYFS_URI_PREFIX", ""), "HTTP URI prefix (empty=auto detect /memoryfs)")
 	token := flag.String("api-token", envOr("MEMORYFS_API_TOKEN", ""), "optional API bearer token")
 	jsonOut := flag.Bool("json", false, "JSON output")
@@ -48,5 +49,5 @@ func firstNode(nodes string) string {
 			return strings.TrimRight(n, "/")
 		}
 	}
-	return "http://127.0.0.1:8080"
+	return ports.DefaultHTTPURL()
 }

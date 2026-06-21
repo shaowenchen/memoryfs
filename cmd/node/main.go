@@ -24,6 +24,7 @@ import (
 	"github.com/shaowenchen/memoryfs/pkg/lifecycle"
 	"github.com/shaowenchen/memoryfs/pkg/meta"
 	"github.com/shaowenchen/memoryfs/pkg/node"
+	"github.com/shaowenchen/memoryfs/pkg/ports"
 	"github.com/shaowenchen/memoryfs/pkg/raftnode"
 	"github.com/shaowenchen/memoryfs/pkg/service"
 	"github.com/shaowenchen/memoryfs/pkg/transport"
@@ -31,11 +32,11 @@ import (
 
 func main() {
 	id := flag.String("id", "n1", "node id")
-	httpAddr := flag.String("http", ":8080", "HTTP listen address")
+	httpAddr := flag.String("http", ports.HTTPListen(), "HTTP listen address")
 	advertiseHTTP := flag.String("advertise-http", "", "HTTP address advertised to peers (default: derived from -http)")
-	grpcAddr := flag.String("grpc", ":9090", "gRPC listen address")
-	rdmaAddr := flag.String("rdma", ":9092", "RDMA listen address")
-	raftAddr := flag.String("raft", ":8081", "Raft listen address")
+	grpcAddr := flag.String("grpc", ports.GRPCListen(), "gRPC listen address")
+	rdmaAddr := flag.String("rdma", ports.RDMAListen(), "RDMA listen address")
+	raftAddr := flag.String("raft", ports.RaftListen(), "Raft listen address")
 	advertiseRaft := flag.String("advertise-raft", "", "Raft address advertised to peers (default: same as -raft)")
 	dataDir := flag.String("data", "./data", "data directory for raft/meta")
 	chunkDir := flag.String("chunk-dir", "", "local disk directory for chunks (default: {data}/{id}/chunks)")

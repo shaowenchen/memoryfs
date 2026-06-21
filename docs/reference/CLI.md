@@ -15,7 +15,7 @@ memoryfs benchmark [flags]  # 性能测试
 | 参数 | 默认 | 说明 |
 |------|------|------|
 | `-id` | n1 | 节点 ID |
-| `-http` / `-grpc` / `-raft` / `-rdma` | :8080 等 | 监听地址 |
+| `-http` / `-grpc` / `-raft` / `-rdma` | :19800 等 | 监听地址（见 `pkg/ports`） |
 | `-advertise-http` / `-advertise-raft` | | 集群内宣告地址 |
 | `-data` | ./data | Raft/元数据目录 |
 | `-chunk-dir` | `{data}/{id}/chunks` | Chunk 落盘目录 |
@@ -43,10 +43,10 @@ memoryfs benchmark [flags]  # 性能测试
 ## status / benchmark
 
 ```bash
-memoryfs status -nodes http://127.0.0.1:8080
-memoryfs status -nodes http://127.0.0.1:8080 -json
+memoryfs status -nodes http://127.0.0.1:19800
+memoryfs status -nodes http://127.0.0.1:19800 -json
 
-memoryfs benchmark -nodes http://127.0.0.1:8080 \
+memoryfs benchmark -nodes http://127.0.0.1:19800 \
   -writes 50 -reads 50 -workers 4 -size 4194304
 ```
 
@@ -57,7 +57,7 @@ memoryfs benchmark -nodes http://127.0.0.1:8080 \
 Helm 默认经 Service 访问：
 
 ```
-http://<svc>:8080/memoryfs/dashboard
+http://<svc>:19800/memoryfs/dashboard
 ```
 
 Prometheus：`GET /metrics`（无前缀）

@@ -3,12 +3,14 @@ package service
 import (
 	"context"
 	"testing"
+
+	"github.com/shaowenchen/memoryfs/pkg/ports"
 )
 
 func TestRepairQueueEnqueueAndRun(t *testing.T) {
 	svc := testStandaloneService(t)
 	_ = svc.cfg.Chunks.Put("1_0", []byte("payload"))
-	svc.enqueueRepair("1_0", []string{"http://127.0.0.1:8080", "http://127.0.0.1:8090"})
+	svc.enqueueRepair("1_0", []string{ports.DefaultHTTPURL(), "http://127.0.0.1:19804"})
 	if svc.RepairInfo(0).Pending != 1 {
 		t.Fatalf("expected 1 pending")
 	}

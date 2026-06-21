@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"net"
 	"strings"
-	"sync"
+	"github.com/shaowenchen/memoryfs/pkg/ports"
 )
 
 // RDMATransport uses RDMA CM for zero-copy chunk transfer on Linux.
@@ -94,7 +94,7 @@ func (t *RDMATransport) rdmaGet(rdmaAddr, chunkID string) ([]byte, error) {
 
 func normalizeRDMAAddr(addr string) string {
 	if addr == "" {
-		return "127.0.0.1:9092"
+		return "127.0.0.1:" + ports.RDMA
 	}
 	return addr
 }
@@ -106,10 +106,10 @@ func normalizeRDMAFromNodeURL(nodeURL string) string {
 	}
 	host, port, ok := strings.Cut(addr, ":")
 	if !ok {
-		return addr + ":9092"
+		return addr + ":" + ports.RDMA
 	}
-	if port == "8080" {
-		return host + ":9092"
+	if port == ports.HTTP {
+		return host + ":" + ports.RDMA
 	}
 	return addr
 }

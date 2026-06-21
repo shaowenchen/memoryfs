@@ -17,9 +17,10 @@ FUSE/mount ──HTTP/gRPC──► Node 集群
 
 | 接口 | 默认端口 | 用途 |
 |------|----------|------|
-| HTTP | 8080 | REST API、FUSE 客户端、Dashboard |
-| gRPC | 9090 | 元数据 RPC、Chunk 流式传输 |
-| RDMA | 9092 | 有 IB/RoCE 设备时自动启用，否则降级 gRPC |
+| HTTP | 19800 | REST API、FUSE 客户端、Dashboard |
+| gRPC | 19801 | 元数据 RPC、Chunk 流式传输 |
+| Raft | 19802 | 节点共识 |
+| RDMA | 19803 | 有 IB/RoCE 设备时自动启用，否则降级 gRPC |
 
 Helm 部署时 HTTP API 与 Dashboard 默认路径前缀为 `/memoryfs`（如 `/memoryfs/dashboard`）。集群探针使用无前缀的 `/health`、`/metrics`。网络与 RDMA 见 [Kubernetes 部署](#kubernetes-部署)。
 
@@ -68,7 +69,7 @@ K8s 滚动更新：StatefulSet + preStop drain + postStart ready + PDB。详见 
 
 ### 网络（hostNetwork）
 
-默认 **hostNetwork: true**（`dnsPolicy: ClusterFirstWithHostNet`）。HTTP、Raft、gRPC、RDMA 直接监听主机端口；**每 K8s 节点最多 1 个 Pod**（required podAntiAffinity）。节点间用 **主机 IP**（`status.hostIP`）宣告地址。默认端口：HTTP 8080、gRPC 9090、Raft 8081、RDMA 9092（见 Helm `service.httpPort` 等）。
+默认 **hostNetwork: true**（`dnsPolicy: ClusterFirstWithHostNet`）。HTTP、Raft、gRPC、RDMA 直接监听主机端口；**每 K8s 节点最多 1 个 Pod**（required podAntiAffinity）。节点间用 **主机 IP**（`status.hostIP`）宣告地址。默认端口：HTTP 19800、gRPC 19801、Raft 19802、RDMA 19803（见 Helm `service.httpPort` 等）。
 
 ### RDMA
 
@@ -87,15 +88,15 @@ Helm 参数 `node.storageGB` 表示每节点 chunk 存储上限（GB）。Chart 
 ### HTTP
 
 ```bash
-curl http://127.0.0.1:8080/health
-curl http://127.0.0.1:8080/memoryfs/v1/cluster/overview
-curl -X PUT http://127.0.0.1:8080/memoryfs/chunks/2_0 --data-binary @file.bin
+curl http://127.0.0.1:19800/health
+curl http://127.0.0.1:19800/memoryfs/v1/cluster/overview
+curl -X PUT http://127.0.0.1:19800/memoryfs/chunks/2_0 --data-binary @file.bin
 ```
 
 ### gRPC
 
 ```bash
-grpcurl -plaintext 127.0.0.1:9090 memoryfs.v1.MemoryFS/Health
+grpcurl -plaintext 127.0.0.1:19801 memoryfs.v1.MemoryFS/Health
 ```
 
 ## 传输优先级
