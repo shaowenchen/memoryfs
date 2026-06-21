@@ -367,6 +367,7 @@ helm upgrade --install memoryfs "${CHART}" -n memoryfs --create-namespace
 | 节点 `draining` 卡住 | 检查 peer 可达；必要时 `drain?force=true` |
 | chunk 缺失 | `node-rebuild.sh` 或 restart（自动 ready） |
 | Raft 日志 `stale raft peer addresses ... :8081` / Pod CrashLoop | hostPath 残留旧 Raft（`:8081`）；**各节点** `sudo rm -rf /data/memoryfs/<instanceId>/`（instanceId 见 Secret 或 Pod 日志），再 `kubectl delete pod -n memoryfs --all` 或重装 |
+| Raft heartbeat `connection refused` 某节点 `:19802` | 该 Pod 未监听 Raft（`kubectl logs memoryfs-N`）；在**该物理机** `ss -lntp | grep 19802`；节点间 **19802/TCP 必须互通**（安全组/防火墙） |
 | memoryfs-0 `0/1`、Raft 连不上其它节点 19802 | 多为旧 Raft 状态（3 节点配置但 1/2 未起）；删 Pod 让 1/2 跟上，仍失败则在各节点清 `/data/memoryfs/<instanceId>/` 后重装 |
 | Raft 无 leader | 保证 quorum 节点在线；检查 19802 互通 |
 | 磁盘满 | 调整 quota；`-max-file-age`；手动 GC |

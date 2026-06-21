@@ -67,6 +67,7 @@ if [ -n "${MEMORYFS_HTTP_URL:-}" ]; then
 elif [ -n "${MEMORYFS_HOST_IP:-}" ]; then
   ADVERTISE_HTTP="http://${MEMORYFS_HOST_IP}:${_http_port}"
   ADVERTISE_RAFT="${MEMORYFS_HOST_IP}:${_raft_port}"
+  RAFT_LISTEN="${MEMORYFS_HOST_IP}:${_raft_port}"
   GRPC_LISTEN="${MEMORYFS_HOST_IP}:${_grpc_port}"
   RDMA_LISTEN="${MEMORYFS_HOST_IP}:${_rdma_port}"
 elif [ -n "${POD_NAME:-}" ] && [ -n "${MEMORYFS_HEADLESS_SERVICE:-}" ]; then
@@ -85,7 +86,7 @@ if [ -n "${MEMORYFS_RAFT_URL:-}" ]; then
   ADVERTISE_RAFT="${MEMORYFS_RAFT_URL}"
 fi
 
-echo "memoryfs node-env: id=${ID} bootstrap=${BOOTSTRAP} join=${JOIN:-<none>} data=${NODE_DATA} advertise_http=${ADVERTISE_HTTP} advertise_raft=${ADVERTISE_RAFT}"
+echo "memoryfs node-env: id=${ID} bootstrap=${BOOTSTRAP} join=${JOIN:-<none>} data=${NODE_DATA} advertise_http=${ADVERTISE_HTTP} advertise_raft=${ADVERTISE_RAFT} raft_listen=${RAFT_LISTEN}"
 
 set -- \
   -id "${ID}" \

@@ -3,6 +3,7 @@ package cluster
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/shaowenchen/memoryfs/pkg/raftnode"
 )
@@ -40,6 +41,9 @@ func (m *Membership) Admit(_ context.Context, member Member) ([]Member, error) {
 	}
 	if member.ID == "" || member.Raft == "" || member.HTTP == "" {
 		return nil, fmt.Errorf("member id, raft, and http are required")
+	}
+	if err := waitRaftTCP(context.Background(), member.Raft, 30*time.Second); err != nil {
+		return nil, err
 	}
 	if err := m.ensureRaftVoter(member); err != nil {
 		return nil, err
