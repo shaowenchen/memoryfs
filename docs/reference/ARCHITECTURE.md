@@ -52,6 +52,8 @@ StatefulSet 有序启动时的成员模型：
 3. Leader **`Admit`**：Raft 加 voter + KV 写入 + epoch 递增 → **`Sync` 返回全量节点列表**
 4. 节点列表经 Raft KV 复制到所有节点；join 响应携带 `nodes` 字段
 
+**注意**：Raft 成员地址持久化在 `{data}/{id}/raft.db`。若 hostPath 残留旧端口（如 `:8081`）而进程已监听 `:19802`，会出现 endless election 且日志里 `connection refused :8081`。启动时会检测端口不一致并 **fail fast**；需在各节点删除 `/data/memoryfs/<instanceId>/` 下全部 Pod 目录后 `helm uninstall` 再装。临时重置单 Pod 可设 `MEMORYFS_RAFT_RESET=true`（仅清该 Pod 的 `raft.db`/`snapshots/`）。
+
 ## Chunk 存储
 
 | 后端 | 说明 |

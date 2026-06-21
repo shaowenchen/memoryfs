@@ -90,6 +90,12 @@ func Start(cfg Config) (*Node, error) {
 		config:    cfg,
 	}
 
+	if err := validateExistingConfig(r, logStore, stableStore, snapStore, cfg); err != nil {
+		_ = r.Shutdown()
+		_ = boltStore.Close()
+		return nil, err
+	}
+
 	if cfg.Bootstrap {
 		hasState, err := raft.HasExistingState(logStore, stableStore, snapStore)
 		if err != nil {

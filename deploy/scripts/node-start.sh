@@ -39,6 +39,11 @@ fi
 CHUNK_DIR="${MEMORYFS_CHUNK_DIR:-${DATA}/chunks}"
 mkdir -p "${DATA}" "${CHUNK_DIR}"
 
+if [ "${MEMORYFS_RAFT_RESET:-}" = "true" ]; then
+  echo "memoryfs: MEMORYFS_RAFT_RESET=true, clearing raft state in ${DATA}"
+  rm -rf "${DATA}/raft.db" "${DATA}/snapshots"
+fi
+
 CHUNK_BACKEND="${MEMORYFS_CHUNK_BACKEND:-tiered}"
 REPLICA_FACTOR="${MEMORYFS_REPLICA_FACTOR:-2}"
 MEM_CACHE_MB="${MEMORYFS_MEM_CACHE_MB:-512}"
@@ -57,15 +62,15 @@ _rdma_port="${RDMA_LISTEN##*:}"
 
 if [ -n "${MEMORYFS_HTTP_URL:-}" ]; then
   ADVERTISE_HTTP="${MEMORYFS_HTTP_URL}"
+elif [ -n "${POD_NAME:-}" ] && [ -n "${MEMORYFS_HEADLESS_SERVICE:-}" ]; then
+  NS="${POD_NAMESPACE:-default}"
+  ADVERTISE_HTTP="http://${POD_NAME}.${MEMORYFS_HEADLESS_SERVICE}.${NS}.svc.cluster.local:${_http_port}"
+  ADVERTISE_RAFT="${POD_NAME}.${MEMORYFS_HEADLESS_SERVICE}.${NS}.svc.cluster.local:${_raft_port}"
 elif [ -n "${MEMORYFS_HOST_IP:-}" ]; then
   ADVERTISE_HTTP="http://${MEMORYFS_HOST_IP}:${_http_port}"
   ADVERTISE_RAFT="${MEMORYFS_HOST_IP}:${_raft_port}"
   GRPC_LISTEN="${MEMORYFS_HOST_IP}:${_grpc_port}"
   RDMA_LISTEN="${MEMORYFS_HOST_IP}:${_rdma_port}"
-elif [ -n "${POD_NAME:-}" ] && [ -n "${MEMORYFS_HEADLESS_SERVICE:-}" ]; then
-  NS="${POD_NAMESPACE:-default}"
-  ADVERTISE_HTTP="http://${POD_NAME}.${MEMORYFS_HEADLESS_SERVICE}.${NS}.svc.cluster.local:${_http_port}"
-  ADVERTISE_RAFT="${POD_NAME}.${MEMORYFS_HEADLESS_SERVICE}.${NS}.svc.cluster.local:${_raft_port}"
 else
   case "${HTTP_LISTEN}" in
     :*) ADVERTISE_HTTP="http://127.0.0.1${HTTP_LISTEN}" ;;
