@@ -32,10 +32,10 @@ nerdctl run -d --privileged --name memoryfs-mount \
   shaowenchen/memoryfs:latest \
   mount -mount /mnt/memoryfs \
   -nodes http://<host>:19800 \
-  -size-gb <storage-gb> -v -f
+  -v -f
 ```
 
-`-size-gb`：告诉 FUSE 客户端在 `df -h` 里显示的总容量（GB），**仅影响显示**，不限制实际读写。应与 Helm `node.storageGB` 一致。也可用环境变量 `MEMORYFS_SIZE_GB`。可逗号分隔多个 `-nodes`。
+`df -h` 的总容量与已用量由 mount 客户端自动从集群 `/v1/cluster/overview`（各节点 `disk_quota_bytes` / 用量）汇总，无需额外参数。可逗号分隔多个 `-nodes`。
 
 ## 验证
 

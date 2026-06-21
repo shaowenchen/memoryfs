@@ -132,6 +132,7 @@ func main() {
 		Transport:     multiTP,
 		ReplicaFactor: *replicaFactor,
 		DefaultTTL:    *defaultTTL,
+		DiskQuotaGB:   *diskQuotaGB,
 	})
 	svc.LoadClusterConfig()
 

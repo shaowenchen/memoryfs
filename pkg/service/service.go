@@ -31,6 +31,7 @@ type Config struct {
 	ReplicaFactor int
 	DefaultTTL    time.Duration
 	RepairQueue   *RepairQueue
+	DiskQuotaGB   int64
 }
 
 // Service implements core MemoryFS node logic shared by HTTP and gRPC.

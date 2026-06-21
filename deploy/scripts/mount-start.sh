@@ -5,12 +5,10 @@ set -euo pipefail
 : "${MEMORYFS_MOUNT_POINT:=/mnt/memoryfs}"
 : "${MEMORYFS_MOUNT_NODES:?MEMORYFS_MOUNT_NODES required}"
 : "${MEMORYFS_MOUNT_FOREGROUND:=true}"
-: "${MEMORYFS_SIZE_GB:=32}"
 
 args=(
   -mount "${MEMORYFS_MOUNT_POINT}"
   -nodes "${MEMORYFS_MOUNT_NODES}"
-  -size-gb "${MEMORYFS_SIZE_GB}"
   -v
 )
 if [ "${MEMORYFS_MOUNT_FOREGROUND}" = "true" ]; then

@@ -22,21 +22,19 @@ type MemoryFS struct {
 	uid       uint32
 	gid       uint32
 	sizeBytes uint64
-	usedBytes func(context.Context) uint64
+	capacityBytes func(context.Context) uint64
+	usedBytes     func(context.Context) uint64
 }
 
 // NewRoot creates the root filesystem node.
-func NewRoot(store meta.Backend, chunks *storage.ChunkStore, uid, gid uint32, sizeBytes uint64, usedBytes func(context.Context) uint64) *MemoryFS {
-	if sizeBytes == 0 {
-		sizeBytes = 32 << 30
-	}
+func NewRoot(store meta.Backend, chunks *storage.ChunkStore, uid, gid uint32, capacityBytes, usedBytes func(context.Context) uint64) *MemoryFS {
 	return &MemoryFS{
-		store:     store,
-		chunks:    chunks,
-		uid:       uid,
-		gid:       gid,
-		sizeBytes: sizeBytes,
-		usedBytes: usedBytes,
+		store:         store,
+		chunks:        chunks,
+		uid:           uid,
+		gid:           gid,
+		capacityBytes: capacityBytes,
+		usedBytes:     usedBytes,
 	}
 }
 
@@ -58,6 +56,11 @@ func (m *MemoryFS) rootIno() uint64 { return meta.RootIno() }
 func (m *MemoryFS) Statfs(ctx context.Context, out *fuse.StatfsOut) syscall.Errno {
 	const blockSize = 4096
 	total := m.sizeBytes
+	if m.capacityBytes != nil {
+		if t := m.capacityBytes(ctx); t > 0 {
+			total = t
+		}
+	}
 	used := uint64(0)
 	if m.usedBytes != nil {
 		used = m.usedBytes(ctx)

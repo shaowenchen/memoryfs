@@ -11,12 +11,13 @@ import (
 
 // Stats holds node storage statistics.
 type Stats struct {
-	ChunkCount    int    `json:"chunk_count"`
-	DiskBytes     int64  `json:"disk_bytes"`
-	MemCacheBytes int64  `json:"mem_cache_bytes"`
-	ReplicaFactor int    `json:"replica_factor"`
-	NodeState     string `json:"node_state"`
-	ClusterEpoch  uint64 `json:"cluster_epoch"`
+	ChunkCount     int    `json:"chunk_count"`
+	DiskBytes      int64  `json:"disk_bytes"`
+	DiskQuotaBytes int64  `json:"disk_quota_bytes"`
+	MemCacheBytes  int64  `json:"mem_cache_bytes"`
+	ReplicaFactor  int    `json:"replica_factor"`
+	NodeState      string `json:"node_state"`
+	ClusterEpoch   uint64 `json:"cluster_epoch"`
 }
 
 // Stats returns current node statistics.
@@ -26,6 +27,9 @@ func (s *Service) Stats() Stats {
 		ReplicaFactor: s.cfg.ReplicaFactor,
 		NodeState:     string(s.cfg.Lifecycle.State()),
 		ClusterEpoch:  s.syncClusterEpoch(),
+	}
+	if s.cfg.DiskQuotaGB > 0 {
+		st.DiskQuotaBytes = s.cfg.DiskQuotaGB << 30
 	}
 	if ts, ok := s.cfg.Chunks.(*chunk.TieredStore); ok {
 		st.MemCacheBytes = ts.MemUsage()

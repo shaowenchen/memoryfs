@@ -5,7 +5,6 @@ package main
 import (
 	"context"
 	"flag"
-	"fmt"
 	"log"
 	"os"
 	"os/signal"
@@ -31,7 +30,6 @@ func main() {
 
 	mountPoint := flag.String("mount", "", "mount point (required)")
 	nodes := flag.String("nodes", envOr("MEMORYFS_NODES", ""), "comma-separated node HTTP URLs (required)")
-	sizeGB := flag.Int("size-gb", envIntOr("MEMORYFS_SIZE_GB", 32), "reported filesystem size for df (GB)")
 	foreground := flag.Bool("f", false, "run in foreground")
 	debug := flag.Bool("debug", false, "enable fuse debug")
 	verbose := flag.Bool("v", false, "verbose: log I/O operations and periodic heartbeats")
@@ -89,18 +87,29 @@ func main() {
 	log.Printf("replica factor: %d", rf)
 	log.Printf("chunk I/O nodes (discovered): %v", chunks.Nodes())
 
-	sizeBytes := uint64(*sizeGB) << 30
-	usedFn := func(ctx context.Context) uint64 {
-		latest, err := apiClient.Overview(ctx)
+	capacityFn := func(ctx context.Context) uint64 {
+		ov, err := apiClient.Overview(ctx)
 		if err != nil {
 			return 0
 		}
-		return usedBytesForNodes(latest, chunkNodes)
+		return service.SumDiskQuotaBytes(*ov, chunks.Nodes())
+	}
+	usedFn := func(ctx context.Context) uint64 {
+		ov, err := apiClient.Overview(ctx)
+		if err != nil {
+			return 0
+		}
+		return service.SumDiskUsageBytes(*ov, chunks.Nodes())
+	}
+	if cap := capacityFn(context.Background()); cap > 0 {
+		log.Printf("df capacity: %d bytes (from cluster disk_quota_bytes)", cap)
+	} else {
+		log.Printf("df capacity: unlimited (nodes report no disk quota)")
 	}
 
 	uid := uint32(syscall.Getuid())
 	gid := uint32(syscall.Getgid())
-	root := fusefs.NewRoot(metaStore, chunks, uid, gid, sizeBytes, usedFn)
+	root := fusefs.NewRoot(metaStore, chunks, uid, gid, capacityFn, usedFn)
 
 	opts := &fs.Options{
 		MountOptions: fuse.MountOptions{
@@ -165,46 +174,9 @@ func reachableNodes(ov *service.ClusterOverview) int {
 	return n
 }
 
-func usedBytesForNodes(ov *service.ClusterOverview, nodes []string) uint64 {
-	want := make(map[string]struct{}, len(nodes))
-	for _, n := range nodes {
-		want[normalizeNodeKey(n)] = struct{}{}
-	}
-	var used uint64
-	for _, node := range ov.Nodes {
-		if len(want) > 0 {
-			if _, ok := want[normalizeNodeKey(node.URL)]; !ok {
-				continue
-			}
-		}
-		used += uint64(node.Stats.DiskBytes + node.Stats.MemCacheBytes)
-	}
-	return used
-}
-
-func normalizeNodeKey(raw string) string {
-	raw = strings.TrimSpace(raw)
-	raw = strings.TrimPrefix(raw, "http://")
-	raw = strings.TrimPrefix(raw, "https://")
-	if i := strings.Index(raw, "/"); i >= 0 {
-		raw = raw[:i]
-	}
-	return strings.TrimRight(raw, "/")
-}
-
 func envOr(key, fallback string) string {
 	if v := strings.TrimSpace(os.Getenv(key)); v != "" {
 		return v
-	}
-	return fallback
-}
-
-func envIntOr(key string, fallback int) int {
-	if v := strings.TrimSpace(os.Getenv(key)); v != "" {
-		var n int
-		if _, err := fmt.Sscanf(v, "%d", &n); err == nil && n > 0 {
-			return n
-		}
 	}
 	return fallback
 }
