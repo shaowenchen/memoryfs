@@ -369,6 +369,7 @@ helm upgrade --install memoryfs "${CHART}" -n memoryfs --create-namespace
 | Raft 日志 `stale raft peer addresses ... :8081` / Pod CrashLoop | hostPath 残留旧 Raft（`:8081`）；**各节点** `sudo rm -rf /data/memoryfs/<instanceId>/`（instanceId 见 Secret 或 Pod 日志），再 `kubectl delete pod -n memoryfs --all` 或重装 |
 | Pod CrashLoop `invalid value "32b" for -disk-quota-gb` | `MEMORYFS_DISK_QUOTA_GB` 必须是纯数字；`helm upgrade` 拉最新 Chart，或 `helm get values` 检查 `node.storageGB` 勿带单位 |
 | Raft heartbeat `connection refused` 某节点 `:19802` | 该 Pod 未监听 Raft（`kubectl logs memoryfs-N`）；在**该物理机** `ss -lntp | grep 19802`；节点间 **19802/TCP 必须互通**（安全组/防火墙） |
+| memoryfs-0 `0/1`、Raft 连不上其它节点 19802 | 多为旧 Raft 状态（3 节点配置但 1/2 未起）；删 Pod 让 1/2 跟上，仍失败则在各节点清 `/data/memoryfs/<instanceId>/` 后重装 |
 | Raft 无 leader | 保证 quorum 节点在线；检查 19802 互通 |
 | 磁盘满 | 调整 quota；`-max-file-age`；手动 GC |
 | 扩容后 mount 不可见新节点 | 重启 mount 或换 nodes 节点；客户端启动时会刷新 `/v1/cluster/nodes` |
