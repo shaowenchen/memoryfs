@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"net"
 	"strings"
+	"sync"
+
 	"github.com/shaowenchen/memoryfs/pkg/ports"
 )
 
