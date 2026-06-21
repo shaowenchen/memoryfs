@@ -85,20 +85,6 @@ func main() {
 	}
 	defer func() { _ = rn.Close() }()
 
-	if *join != "" {
-		if err := cluster.Join(context.Background(), cluster.JoinOptions{
-			LeaderURL: *join,
-			URIPrefix: *uriPrefix,
-			Member: cluster.Member{
-				ID: *id, Raft: raftAdvertise, HTTP: httpURL,
-				GRPC: *grpcAddr, RDMA: *rdmaAddr,
-			},
-		}); err != nil {
-			log.Fatalf("join cluster: %v", err)
-		}
-		log.Printf("joined cluster via %s as %s", *join, *id)
-	}
-
 	metaStore, err := meta.NewLocalStore(rn.KV())
 	if err != nil {
 		log.Fatalf("meta store: %v", err)
@@ -179,6 +165,14 @@ func main() {
 	go serveHTTP(*httpAddr, httpSrv.Handler(), &httpServer)
 	go serveGRPC(*grpcAddr, grpcSrv)
 
+	if *join != "" && !*standalone {
+		member := cluster.Member{
+			ID: *id, Raft: raftAdvertise, HTTP: httpURL,
+			GRPC: *grpcAddr, RDMA: *rdmaAddr,
+		}
+		startClusterJoin(*join, *uriPrefix, rn, member)
+	}
+
 	log.Printf("memoryfs node %s: http=%s grpc=%s chunk_dir=%s rf=%d dashboard=%s",
 		*id, *httpAddr, *grpcAddr, chunkPath, svc.ReplicaFactor(), dashboardAddr(*httpAddr, *uriPrefix))
 
@@ -257,4 +251,36 @@ func dashboardAddr(httpListen, uriPrefix string) string {
 		return strings.TrimRight(httpListen, "/") + path
 	}
 	return "http://" + httpListen + path
+}
+
+func startClusterJoin(joinURL, uriPrefix string, rn *raftnode.Node, member cluster.Member) {
+	opt := cluster.JoinOptions{
+		LeaderURL: joinURL,
+		URIPrefix: uriPrefix,
+		Member:    member,
+	}
+	already, err := rn.HasServer(member.ID)
+	if err != nil {
+		log.Printf("cluster join: membership check: %v", err)
+	}
+	run := func() {
+		if err := cluster.Join(context.Background(), opt); err != nil {
+			if already {
+				log.Printf("warning: cluster re-join: %v", err)
+				return
+			}
+			log.Fatalf("join cluster: %v", err)
+		}
+		if already {
+			log.Printf("cluster re-joined via %s as %s", joinURL, member.ID)
+		} else {
+			log.Printf("joined cluster via %s as %s", joinURL, member.ID)
+		}
+	}
+	if already {
+		log.Printf("cluster join: %s already in raft config; re-registering in background", member.ID)
+		go run()
+		return
+	}
+	run()
 }

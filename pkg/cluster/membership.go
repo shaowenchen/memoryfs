@@ -42,6 +42,15 @@ func (m *Membership) Admit(_ context.Context, member Member) ([]Member, error) {
 	if member.ID == "" || member.Raft == "" || member.HTTP == "" {
 		return nil, fmt.Errorf("member id, raft, and http are required")
 	}
+	if existing, ok, err := m.raft.ServerAddress(member.ID); err == nil && ok && existing == member.Raft {
+		if members, err := m.List(context.Background()); err == nil {
+			for _, e := range members {
+				if e.ID == member.ID && e.HTTP == member.HTTP {
+					return m.Sync(context.Background())
+				}
+			}
+		}
+	}
 	if err := waitRaftTCP(context.Background(), member.Raft, 30*time.Second); err != nil {
 		return nil, err
 	}

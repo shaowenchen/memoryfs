@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -39,11 +40,17 @@ func Join(ctx context.Context, opt JoinOptions) error {
 			return nil
 		}
 		if next != "" {
+			if next != leader {
+				log.Printf("cluster join: redirect leader %s -> %s", leader, next)
+			}
 			leader = strings.TrimRight(next, "/")
 			lastErr = err
 			continue
 		}
 		lastErr = err
+		if attempt == 1 || attempt%10 == 0 {
+			log.Printf("cluster join: attempt %d/%d via %s: %v", attempt, opt.MaxAttempts, leader, err)
+		}
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
