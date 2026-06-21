@@ -400,10 +400,19 @@ func (s *Server) setattr(ctx context.Context, req fsRequest) (fsResponse, int) {
 }
 
 func (s *Server) writeBlock(ctx context.Context, req fsRequest) (fsResponse, int) {
-	if req.Ino == 0 || len(req.Data) == 0 {
-		return fsResponse{Error: "missing ino or data"}, http.StatusBadRequest
+	if req.Ino == 0 {
+		return fsResponse{Error: "missing ino"}, http.StatusBadRequest
 	}
-	attr, err := s.svc.WriteBlock(ctx, req.Ino, req.ChunkIdx, req.BlockIdx, req.Data, req.FileSize)
+	if len(req.Data) == 0 {
+		return fsResponse{Error: "missing data"}, http.StatusBadRequest
+	}
+	var attr *meta.Attr
+	var err error
+	if req.FileSize > 0 || req.ChunkIdx > 0 || req.BlockIdx > 0 {
+		attr, err = s.svc.WriteBlock(ctx, req.Ino, req.ChunkIdx, req.BlockIdx, req.Data, req.FileSize)
+	} else {
+		attr, err = s.svc.WriteAt(ctx, req.Ino, req.Offset, req.Data)
+	}
 	if err != nil {
 		return fsResponse{Error: err.Error()}, http.StatusInternalServerError
 	}

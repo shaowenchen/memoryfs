@@ -203,8 +203,14 @@ func (c *ChunkStore) Read(ctx context.Context, attr *meta.Attr, dest []byte, off
 	return written, nil
 }
 
-// Write buffers data at offset and syncs full 4 MiB blocks to replica nodes.
+// Write sends data directly to the leader on every FUSE write (no mount buffer).
 func (c *ChunkStore) Write(ctx context.Context, attr *meta.Attr, data []byte, offset int64) error {
+	if len(data) == 0 {
+		return nil
+	}
+	if c.flusher != nil {
+		return c.flusher.WriteAt(ctx, attr.Ino, offset, data)
+	}
 	return c.writerFor(attr.Ino).Write(ctx, attr, data, offset)
 }
 

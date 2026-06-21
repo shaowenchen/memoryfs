@@ -84,8 +84,8 @@ func main() {
 		rf = detectReplicaFactor(nodeList)
 	}
 	chunkNodes := metaStore.Nodes()
-	chunks := storage.NewMountedChunkStore(metaStore, storage.BlockFlusherFunc(func(ctx context.Context, ino uint64, chunkIdx, blockIdx int, data []byte, fileSize uint64) error {
-		return metaStore.WriteBlock(ctx, ino, chunkIdx, blockIdx, data, fileSize)
+	chunks := storage.NewMountedChunkStore(metaStore, storage.BlockFlusherFunc(func(ctx context.Context, ino uint64, offset int64, data []byte) error {
+		return metaStore.WriteAt(ctx, ino, offset, data)
 	}), chunkNodes, rf, prefix)
 	if err := chunks.RefreshNodes(context.Background()); err != nil {
 		log.Printf("warning: refresh nodes: %v", err)

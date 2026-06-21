@@ -31,7 +31,7 @@ type RemoteMeta struct {
 func NewRemoteMeta(nodes []string) *RemoteMeta {
 	r := &RemoteMeta{
 		nodes:  append([]string(nil), nodes...),
-		client: &http.Client{Timeout: 15 * time.Second},
+		client: &http.Client{Timeout: 120 * time.Second},
 	}
 	if len(nodes) > 0 {
 		seed := strings.TrimRight(strings.TrimSpace(nodes[0]), "/")
@@ -161,11 +161,19 @@ func (r *RemoteMeta) UpdateAttr(ctx context.Context, attr *meta.Attr) error {
 	return r.post(ctx, "/v1/fs/setattr", fsReq{Attr: attr}, &resp, true)
 }
 
-// WriteBlock stores one block on the leader: chunk placement, replication, and inode metadata.
+// WriteBlock stores one block on the leader (legacy block-index API).
 func (r *RemoteMeta) WriteBlock(ctx context.Context, ino uint64, chunkIdx, blockIdx int, data []byte, fileSize uint64) error {
 	var resp fsResp
 	return r.post(ctx, "/v1/fs/write", fsReq{
 		Ino: ino, ChunkIdx: chunkIdx, BlockIdx: blockIdx, Data: data, FileSize: fileSize,
+	}, &resp, true)
+}
+
+// WriteAt sends each FUSE write directly to the leader (no mount-side chunk cache).
+func (r *RemoteMeta) WriteAt(ctx context.Context, ino uint64, offset int64, data []byte) error {
+	var resp fsResp
+	return r.post(ctx, "/v1/fs/write", fsReq{
+		Ino: ino, Offset: offset, Data: data,
 	}, &resp, true)
 }
 

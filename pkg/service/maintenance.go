@@ -46,6 +46,11 @@ func (s *Service) Stats() Stats {
 		}
 	} else if qm, ok := s.cfg.Chunks.(*chunk.QuotaMemory); ok {
 		st.MemCacheBytes = qm.UsageBytes()
+	} else if pm, ok := s.cfg.Chunks.(*chunk.PreallocMemory); ok {
+		st.MemCacheBytes = pm.UsageBytes()
+		if pm.ReservedBytes() > 0 {
+			st.DiskQuotaBytes = pm.ReservedBytes()
+		}
 	} else if ms, ok := s.cfg.Chunks.(*chunk.MemoryStore); ok {
 		st.MemCacheBytes = ms.UsageBytes()
 	}

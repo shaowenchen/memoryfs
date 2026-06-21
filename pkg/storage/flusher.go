@@ -4,16 +4,15 @@ import (
 	"context"
 )
 
-// BlockFlusher persists a buffered block through the cluster leader: the node
-// service selects replica nodes, stores chunk data, and commits metadata.
+// BlockFlusher sends each FUSE write straight to the cluster leader (no mount cache).
 type BlockFlusher interface {
-	PutBlock(ctx context.Context, ino uint64, chunkIdx, blockIdx int, data []byte, fileSize uint64) error
+	WriteAt(ctx context.Context, ino uint64, offset int64, data []byte) error
 }
 
 // BlockFlusherFunc adapts a function to BlockFlusher.
-type BlockFlusherFunc func(ctx context.Context, ino uint64, chunkIdx, blockIdx int, data []byte, fileSize uint64) error
+type BlockFlusherFunc func(ctx context.Context, ino uint64, offset int64, data []byte) error
 
-// PutBlock implements BlockFlusher.
-func (f BlockFlusherFunc) PutBlock(ctx context.Context, ino uint64, chunkIdx, blockIdx int, data []byte, fileSize uint64) error {
-	return f(ctx, ino, chunkIdx, blockIdx, data, fileSize)
+// WriteAt implements BlockFlusher.
+func (f BlockFlusherFunc) WriteAt(ctx context.Context, ino uint64, offset int64, data []byte) error {
+	return f(ctx, ino, offset, data)
 }

@@ -39,6 +39,14 @@ nerdctl run -d --privileged --name memoryfs-fuse \
   -v -f
 ```
 
+写入 1GB 测试：
+
+```bash
+time dd if=/dev/zero of=/mnt/memoryfs/test.img bs=1M count=1024 oflag=direct status=progress
+sync
+ls -lh /mnt/memoryfs/test.img
+```
+
 ### 4. 卸载
 
 卸载 FUSE：

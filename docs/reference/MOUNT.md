@@ -45,6 +45,11 @@ nerdctl logs -f memoryfs-fuse
 df -h /mnt/memoryfs          # 只查当前路径，勿 df | grep memoryfs
 ls /mnt/memoryfs
 echo test > /mnt/memoryfs/hello.txt
+
+# 1GB 顺序写测试
+time dd if=/dev/zero of=/mnt/memoryfs/test.img bs=1M count=1024 oflag=direct status=progress
+sync
+ls -lh /mnt/memoryfs/test.img
 ```
 
 ## 停止
@@ -61,7 +66,7 @@ fusermount -u /mnt/memoryfs
 | `connection refused` / DNS `server misbehaving` | 节点列表含 `*.svc.cluster.local` 说明注册地址不对；升级含 host IP 修复的镜像后 **重启全部 Pod**（follower 会 re-join 刷新地址），或清数据重装 |
 | Operation not supported | 拉最新镜像（需 FUSE Open 支持） |
 | write hang / `context canceled` on chunk PUT | 升级含 FUSE I/O 修复的 mount 镜像；FUSE 请求 ctx 过早取消会导致写失败 |
-| 小写入后 `cat` 读不到 / 跨节点看不到 | 写入按 **4 MiB Block** 缓冲；满块自动同步，尾部块在 `fsync` 或关闭文件后同步。升级最新 mount 镜像 |
+| 小写入后 `cat` 读不到 | 确认 mount/node 为最新镜像；每次 write 已直发 Leader，失败看 mount 日志 |
 | lookup `entry not found` 日志 | 创建文件前的 lookup 属正常；新版本不再轮询全部节点刷 warn |
 
 **日志级别：**

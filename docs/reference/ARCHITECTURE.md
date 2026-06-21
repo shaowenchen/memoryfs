@@ -111,11 +111,15 @@ K8s 滚动更新：StatefulSet + preStop drain + postStart ready + PDB。详见 
 
 ```
 dd / app
-  → FUSE mount（客户端 4 MiB 写缓冲）
-  → POST /v1/fs/write → Raft Leader（一次 RPC）
-       ├─ 选副本节点、PUT chunk、复制到 peer
+  → FUSE mount（无客户端 chunk 缓存，每次 write 直发 Leader）
+  → POST /v1/fs/write {ino, offset, data}
+  → Raft Leader
+       ├─ 合并进 4 MiB block，写入本地 prealloc chunk 池
+       ├─ 复制到 RF 个 peer 节点
        └─ Raft 提交 inode 元数据 + chunk registry
 ```
+
+**Node 启动**：按 Helm `node.storageGB` **预分配** chunk 内存池（Pod 起来即占用 quota 大小 RSS）。
 
 读路径仍可从副本节点直接 GET chunk（按 registry 定位）。
 
@@ -131,7 +135,7 @@ dd / app
 
 Helm 参数 `node.storageGB` 表示每节点 chunk 存储上限（GB）。Chart 自动设置 Pod 内存 **request/limit = storageGB + 1Gi**（额外 1Gi 预留给进程、Raft 与运行时开销）。
 
-- **`diskSync` 关闭**（默认）：chunk 存内存，按 `storageGB` 做字节配额；`/v1/stats` 的 `disk_quota_bytes` 即该上限，实际用量在 `mem_cache_bytes`（随写入增长，**启动时不预分配空 chunk**）。
+- **`diskSync` 关闭**（默认）：chunk 存 **预分配内存池**（`storageGB` 在 Pod 启动时一次性 reserve）；实际 chunk 用量见 `mem_cache_bytes`。
 - **`diskSync` 开启**：chunk 落盘，磁盘配额同样为 `storageGB`。
 
 ## 集群 Epoch

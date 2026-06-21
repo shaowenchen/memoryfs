@@ -134,15 +134,9 @@ func (w *blockWriter) flushLocked(ctx context.Context, key blockKey, fileSize ui
 		valid = len(buf)
 	}
 	payload := buf[:valid]
-	if w.store.flusher != nil {
-		if err := w.store.flusher.PutBlock(ctx, w.ino, key.chunkIdx, key.blockIdx, payload, fileSize); err != nil {
-			return err
-		}
-	} else {
-		blockID := meta.BlockID(w.ino, key.chunkIdx, key.blockIdx)
-		if err := w.store.writeChunk(ctx, blockID, payload); err != nil {
-			return err
-		}
+	blockID := meta.BlockID(w.ino, key.chunkIdx, key.blockIdx)
+	if err := w.store.writeChunk(ctx, blockID, payload); err != nil {
+		return err
 	}
 	delete(w.dirty, key)
 	delete(w.valid, key)
