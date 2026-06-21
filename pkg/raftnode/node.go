@@ -190,19 +190,25 @@ func (n *Node) AddVoter(id, raftAddr string) error {
 
 // HasServer reports whether id is in the current raft configuration.
 func (n *Node) HasServer(id string) (bool, error) {
+	_, ok, err := n.ServerAddress(id)
+	return ok, err
+}
+
+// ServerAddress returns the raft address for id in the current configuration.
+func (n *Node) ServerAddress(id string) (string, bool, error) {
 	if n.raft == nil {
-		return false, fmt.Errorf("standalone mode")
+		return "", false, fmt.Errorf("standalone mode")
 	}
 	future := n.raft.GetConfiguration()
 	if err := future.Error(); err != nil {
-		return false, err
+		return "", false, err
 	}
 	for _, s := range future.Configuration().Servers {
 		if string(s.ID) == id {
-			return true, nil
+			return string(s.Address), true, nil
 		}
 	}
-	return false, nil
+	return "", false, nil
 }
 
 // RemoveVoter removes a node from the raft cluster.

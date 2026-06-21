@@ -22,6 +22,9 @@ func RunLeaderLoop(ctx context.Context, m *Membership, self Member, fn func(cont
 			} else {
 				log.Printf("cluster: leader registered %s", self.ID)
 			}
+			if err := m.ReconcileRaftPeers(ctx); err != nil {
+				log.Printf("cluster: reconcile raft peers: %v", err)
+			}
 			if fn != nil {
 				if err := fn(ctx); err != nil {
 					log.Printf("cluster: leader ready hook: %v", err)

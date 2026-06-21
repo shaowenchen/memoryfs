@@ -85,7 +85,7 @@ if [ -n "${MEMORYFS_RAFT_URL:-}" ]; then
   ADVERTISE_RAFT="${MEMORYFS_RAFT_URL}"
 fi
 
-echo "memoryfs node-env: id=${ID} bootstrap=${BOOTSTRAP} join=${JOIN:-<none>} data=${NODE_DATA}"
+echo "memoryfs node-env: id=${ID} bootstrap=${BOOTSTRAP} join=${JOIN:-<none>} data=${NODE_DATA} advertise_http=${ADVERTISE_HTTP} advertise_raft=${ADVERTISE_RAFT}"
 
 set -- \
   -id "${ID}" \
