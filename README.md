@@ -23,12 +23,6 @@ helm upgrade --install memoryfs \
   --set node.storageGB=32
 ```
 
-确认 Pod 就绪：
-
-```bash
-kubectl -n memoryfs get pods -l component=node
-```
-
 ### 3. 挂载
 
 宿主机需有 `/dev/fuse`。挂载容器**必须保持运行**（默认目录 `/mnt/memoryfs`）：
