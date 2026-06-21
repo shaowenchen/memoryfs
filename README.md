@@ -10,7 +10,7 @@
 kubectl label node <node-name> memoryfs.io/node=true
 ```
 
-需打标签的节点数 ≥ Helm `replicaCount`（每节点最多 1 个 MemoryFS Pod）。
+每个节点最多一个 Pod。
 
 ### 2. 安装集群
 
@@ -24,8 +24,6 @@ helm upgrade --install memoryfs \
 ```
 
 ### 3. 挂载
-
-宿主机需有 `/dev/fuse`。挂载容器**必须保持运行**（默认目录 `/mnt/memoryfs`）：
 
 ```bash
 mkdir -p /mnt/memoryfs
@@ -41,8 +39,6 @@ nerdctl run -d --privileged --name memoryfs-fuse \
   -v -f
 ```
 
-`-nodes` 填任一节点 HTTP 地址（可逗号分隔多个）。详见 [docs/reference/MOUNT.md](docs/reference/MOUNT.md)。
-
 ### 4. 卸载
 
 卸载 FUSE：
@@ -57,8 +53,6 @@ fusermount -u /mnt/memoryfs
 ```bash
 helm uninstall memoryfs -n memoryfs
 ```
-
-节点 hostPath 上的数据目录（默认 `/data/memoryfs`）不会随 Helm 删除，需自行清理。
 
 ## 文档
 

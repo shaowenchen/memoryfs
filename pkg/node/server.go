@@ -68,6 +68,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/v1/fs/rmdir", s.handleWrite(s.rmdir))
 	s.mux.HandleFunc("/v1/fs/rename", s.handleWrite(s.rename))
 	s.mux.HandleFunc("/v1/fs/setattr", s.handleWrite(s.setattr))
+	s.mux.HandleFunc("/v1/fs/write", s.handleWrite(s.writeBlock))
 	s.mux.HandleFunc("/chunks/", s.handleChunks)
 }
 
@@ -96,6 +97,11 @@ type fsRequest struct {
 	Attr      *meta.Attr `json:"attr,omitempty"`
 	Force     bool       `json:"force,omitempty"`
 	ChunkID   string     `json:"chunk_id,omitempty"`
+	Offset    int64      `json:"offset,omitempty"`
+	ChunkIdx  int        `json:"chunk_idx,omitempty"`
+	BlockIdx  int        `json:"block_idx,omitempty"`
+	Data      []byte     `json:"data,omitempty"`
+	FileSize  uint64     `json:"file_size,omitempty"`
 	Replicas  []string   `json:"replicas,omitempty"`
 	Epoch     uint64     `json:"epoch,omitempty"`
 }
@@ -391,6 +397,17 @@ func (s *Server) setattr(ctx context.Context, req fsRequest) (fsResponse, int) {
 		return fsResponse{Error: err.Error()}, http.StatusInternalServerError
 	}
 	return fsResponse{Attr: req.Attr}, http.StatusOK
+}
+
+func (s *Server) writeBlock(ctx context.Context, req fsRequest) (fsResponse, int) {
+	if req.Ino == 0 || len(req.Data) == 0 {
+		return fsResponse{Error: "missing ino or data"}, http.StatusBadRequest
+	}
+	attr, err := s.svc.WriteBlock(ctx, req.Ino, req.ChunkIdx, req.BlockIdx, req.Data, req.FileSize)
+	if err != nil {
+		return fsResponse{Error: err.Error()}, http.StatusInternalServerError
+	}
+	return fsResponse{Attr: attr}, http.StatusOK
 }
 
 func (s *Server) registrySet(ctx context.Context, req fsRequest) (fsResponse, int) {

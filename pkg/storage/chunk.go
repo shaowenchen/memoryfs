@@ -28,6 +28,7 @@ type ChunkStore struct {
 	transport     transport.ChunkTransport
 	replicaFactor int
 	writers       sync.Map // ino -> *blockWriter
+	flusher       BlockFlusher
 }
 
 // NewChunkStore creates a chunk store with multi-protocol transport.
@@ -44,6 +45,14 @@ func NewHTTPChunkStore(metaStore meta.Backend, seeds []string, replicaFactor int
 	if rl, ok := metaStore.(ReplicaLookup); ok {
 		c.replicaLookup = rl
 	}
+	return c
+}
+
+// NewMountedChunkStore creates a FUSE chunk store: writes go to the leader once
+// per block; reads still use replica nodes directly.
+func NewMountedChunkStore(metaStore meta.Backend, flusher BlockFlusher, seeds []string, replicaFactor int, uriPrefix string) *ChunkStore {
+	c := NewHTTPChunkStore(metaStore, seeds, replicaFactor, uriPrefix)
+	c.flusher = flusher
 	return c
 }
 

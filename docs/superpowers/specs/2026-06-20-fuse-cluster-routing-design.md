@@ -11,10 +11,10 @@
 
 ```
 FUSE Read/Write
-  → RemoteMeta (any seed node) — metadata
-  → ListNodes — discover all cluster nodes
-  → GET /v1/chunks/registry/get — replica URLs for chunk
-  → HTTP GET/PUT /memoryfs/chunks/{id} — direct to data node
+  → RemoteMeta (any seed node) — metadata reads
+  → Write: POST /v1/fs/write → Raft Leader (once per 4 MiB block)
+       leader selects replica nodes, stores chunks, commits registry + inode via Raft
+  → Read: GET /v1/chunks/registry/get → HTTP GET chunk from replica node
 ```
 
 ## Changes

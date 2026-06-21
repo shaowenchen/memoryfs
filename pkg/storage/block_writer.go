@@ -45,8 +45,14 @@ func (c *ChunkStore) FlushFile(ctx context.Context, ino uint64) error {
 func (w *blockWriter) Flush(ctx context.Context) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	var maxSize uint64
+	for key, valid := range w.valid {
+		if uint64(key.chunkIdx*meta.ChunkSize+valid) > maxSize {
+			maxSize = uint64(key.chunkIdx*meta.ChunkSize + valid)
+		}
+	}
 	for key := range w.dirty {
-		if err := w.flushLocked(ctx, key); err != nil {
+		if err := w.flushLocked(ctx, key, maxSize); err != nil {
 			return err
 		}
 	}
@@ -110,10 +116,10 @@ func (w *blockWriter) Write(ctx context.Context, attr *meta.Attr, data []byte, o
 func (w *blockWriter) flushBlock(ctx context.Context, attr *meta.Attr, chunkIdx, blockIdx int) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	return w.flushLocked(ctx, blockKey{chunkIdx: chunkIdx, blockIdx: blockIdx})
+	return w.flushLocked(ctx, blockKey{chunkIdx: chunkIdx, blockIdx: blockIdx}, attr.Size)
 }
 
-func (w *blockWriter) flushLocked(ctx context.Context, key blockKey) error {
+func (w *blockWriter) flushLocked(ctx context.Context, key blockKey, fileSize uint64) error {
 	buf, ok := w.dirty[key]
 	if !ok {
 		return nil
@@ -127,9 +133,16 @@ func (w *blockWriter) flushLocked(ctx context.Context, key blockKey) error {
 	if valid > len(buf) {
 		valid = len(buf)
 	}
-	blockID := meta.BlockID(w.ino, key.chunkIdx, key.blockIdx)
-	if err := w.store.writeChunk(ctx, blockID, buf[:valid]); err != nil {
-		return err
+	payload := buf[:valid]
+	if w.store.flusher != nil {
+		if err := w.store.flusher.PutBlock(ctx, w.ino, key.chunkIdx, key.blockIdx, payload, fileSize); err != nil {
+			return err
+		}
+	} else {
+		blockID := meta.BlockID(w.ino, key.chunkIdx, key.blockIdx)
+		if err := w.store.writeChunk(ctx, blockID, payload); err != nil {
+			return err
+		}
 	}
 	delete(w.dirty, key)
 	delete(w.valid, key)

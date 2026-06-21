@@ -107,6 +107,18 @@ K8s 滚动更新：StatefulSet + preStop drain + postStart ready + PDB。详见 
 
 ## Kubernetes 部署
 
+### 写路径（FUSE）
+
+```
+dd / app
+  → FUSE mount（客户端 4 MiB 写缓冲）
+  → POST /v1/fs/write → Raft Leader（一次 RPC）
+       ├─ 选副本节点、PUT chunk、复制到 peer
+       └─ Raft 提交 inode 元数据 + chunk registry
+```
+
+读路径仍可从副本节点直接 GET chunk（按 registry 定位）。
+
 ### 网络（hostNetwork）
 
 默认 **hostNetwork: true**（`dnsPolicy: ClusterFirstWithHostNet`）。HTTP、Raft、gRPC、RDMA 直接监听主机端口；**每 K8s 节点最多 1 个 Pod**（required podAntiAffinity）。节点间用 **主机 IP**（`status.hostIP`）宣告地址。默认端口：HTTP 19800、gRPC 19801、Raft 19802、RDMA 19803（见 Helm `service.httpPort` 等）。

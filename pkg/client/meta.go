@@ -73,6 +73,11 @@ type fsReq struct {
 	NewName    string `json:"new_name,omitempty"`
 	ChunkID    string `json:"chunk_id,omitempty"`
 	Attr       *meta.Attr `json:"attr,omitempty"`
+	Offset     int64      `json:"offset,omitempty"`
+	ChunkIdx   int        `json:"chunk_idx,omitempty"`
+	BlockIdx   int        `json:"block_idx,omitempty"`
+	Data       []byte     `json:"data,omitempty"`
+	FileSize   uint64     `json:"file_size,omitempty"`
 }
 
 type fsResp struct {
@@ -154,6 +159,14 @@ func (r *RemoteMeta) Rename(ctx context.Context, oldParent, newParent uint64, ol
 func (r *RemoteMeta) UpdateAttr(ctx context.Context, attr *meta.Attr) error {
 	var resp fsResp
 	return r.post(ctx, "/v1/fs/setattr", fsReq{Attr: attr}, &resp, true)
+}
+
+// WriteBlock stores one block on the leader: chunk placement, replication, and inode metadata.
+func (r *RemoteMeta) WriteBlock(ctx context.Context, ino uint64, chunkIdx, blockIdx int, data []byte, fileSize uint64) error {
+	var resp fsResp
+	return r.post(ctx, "/v1/fs/write", fsReq{
+		Ino: ino, ChunkIdx: chunkIdx, BlockIdx: blockIdx, Data: data, FileSize: fileSize,
+	}, &resp, true)
 }
 
 func (r *RemoteMeta) ListNodes(ctx context.Context) ([]string, error) {

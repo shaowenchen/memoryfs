@@ -363,11 +363,6 @@ func (f *File) Write(ctx context.Context, fh fs.FileHandle, data []byte, off int
 		return 0, syscall.EIO
 	}
 	mountlog.Debugf("fuse write ino=%d off=%d len=%d size=%d", f.ino, off, len(data), attr.Size)
-	attr.Mtime = time.Now().Unix()
-	if err := f.store.UpdateAttr(ctx, attr); err != nil {
-		mountlog.Errorf("fuse setattr ino=%d after write: %v", f.ino, err)
-		return 0, syscall.EIO
-	}
 	return uint32(len(data)), 0
 }
 
