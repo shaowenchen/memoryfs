@@ -1,9 +1,7 @@
 package main
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
@@ -20,6 +18,7 @@ import (
 
 	pb "github.com/shaowenchen/memoryfs/api/memoryfs/v1"
 	"github.com/shaowenchen/memoryfs/pkg/chunk"
+	"github.com/shaowenchen/memoryfs/pkg/cluster"
 	"github.com/shaowenchen/memoryfs/pkg/grpcserver"
 	"github.com/shaowenchen/memoryfs/pkg/lifecycle"
 	"github.com/shaowenchen/memoryfs/pkg/meta"
@@ -87,9 +86,17 @@ func main() {
 	defer func() { _ = rn.Close() }()
 
 	if *join != "" {
-		if err := joinClusterBlocking(*join, *id, raftAdvertise, httpURL, *grpcAddr, *rdmaAddr, *uriPrefix); err != nil {
+		if err := cluster.Join(context.Background(), cluster.JoinOptions{
+			LeaderURL: *join,
+			URIPrefix: *uriPrefix,
+			Member: cluster.Member{
+				ID: *id, Raft: raftAdvertise, HTTP: httpURL,
+				GRPC: *grpcAddr, RDMA: *rdmaAddr,
+			},
+		}); err != nil {
 			log.Fatalf("join cluster: %v", err)
 		}
+		log.Printf("joined cluster via %s as %s", *join, *id)
 	}
 
 	metaStore, err := meta.NewLocalStore(rn.KV())
@@ -137,8 +144,22 @@ func main() {
 	svc.LoadClusterConfig()
 
 	if !*standalone {
-		go runLeaderDuties(rn, svc, metaStore)
-	} else if err := rn.RegisterSelf(); err != nil {
+		self := cluster.Member{
+			ID: *id, HTTP: httpURL, Raft: raftAdvertise, GRPC: *grpcAddr, RDMA: *rdmaAddr,
+		}
+		go cluster.RunLeaderLoop(context.Background(), svc.Membership(), self, func(ctx context.Context) error {
+			if err := svc.PersistReplicaFactor(); err != nil {
+				log.Printf("warning: persist replica factor: %v", err)
+			}
+			if err := ensureRootAsLeader(ctx, rn, metaStore, 2*time.Minute); err != nil {
+				return err
+			}
+			log.Printf("leader ready: root inode initialized")
+			return nil
+		})
+	} else if err := cluster.NewMembership(rn, *id).RegisterSelf(cluster.Member{
+		ID: *id, HTTP: httpURL, Raft: raftAdvertise, GRPC: *grpcAddr, RDMA: *rdmaAddr,
+	}); err != nil {
 		log.Printf("warning: register self: %v", err)
 	}
 
@@ -211,28 +232,6 @@ func normalizeHTTP(addr string) string {
 	return "http://" + addr
 }
 
-func joinClusterBlocking(leaderURL, id, raftAddr, httpAddr, grpcAddr, rdmaAddr, uriPrefix string) error {
-	const maxAttempts = 60
-	var lastErr error
-	for attempt := 1; attempt <= maxAttempts; attempt++ {
-		lastErr = joinCluster(leaderURL, id, raftAddr, httpAddr, grpcAddr, rdmaAddr, uriPrefix)
-		if lastErr == nil {
-			log.Printf("joined cluster via %s as %s", leaderURL, id)
-			return nil
-		}
-		log.Printf("join cluster attempt %d/%d: %v", attempt, maxAttempts, lastErr)
-		time.Sleep(time.Duration(min(attempt, 5)) * time.Second)
-	}
-	return fmt.Errorf("after %d attempts: %w", maxAttempts, lastErr)
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
 func ensureRootAsLeader(ctx context.Context, rn *raftnode.Node, store *meta.LocalStore, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
@@ -247,74 +246,6 @@ func ensureRootAsLeader(ctx context.Context, rn *raftnode.Node, store *meta.Loca
 		time.Sleep(200 * time.Millisecond)
 	}
 	return fmt.Errorf("timed out waiting to initialize root inode as leader")
-}
-
-func runLeaderDuties(rn *raftnode.Node, svc *service.Service, store *meta.LocalStore) {
-	var wasLeader bool
-	for {
-		leader := rn.IsLeader()
-		if leader && !wasLeader {
-			if err := rn.RegisterSelf(); err != nil {
-				log.Printf("warning: register self: %v", err)
-			}
-			if err := svc.PersistReplicaFactor(); err != nil {
-				log.Printf("warning: persist replica factor: %v", err)
-			}
-			if err := ensureRootAsLeader(context.Background(), rn, store, 2*time.Minute); err != nil {
-				log.Printf("warning: leader root init: %v", err)
-			} else {
-				log.Printf("leader ready: registered and root inode initialized")
-			}
-		}
-		wasLeader = leader
-		time.Sleep(500 * time.Millisecond)
-	}
-}
-
-func joinCluster(leaderURL, id, raftAddr, httpAddr, grpcAddr, rdmaAddr, uriPrefix string) error {
-	for i := 0; i < 5; i++ {
-		next, err := joinClusterOnce(leaderURL, id, raftAddr, httpAddr, grpcAddr, rdmaAddr, uriPrefix)
-		if err != nil {
-			return err
-		}
-		if next == "" {
-			return nil
-		}
-		leaderURL = next
-	}
-	return fmt.Errorf("join: too many leader redirects")
-}
-
-func joinClusterOnce(leaderURL, id, raftAddr, httpAddr, grpcAddr, rdmaAddr, uriPrefix string) (redirect string, err error) {
-	body, _ := json.Marshal(map[string]string{
-		"id": id, "raft_addr": raftAddr, "http_addr": httpAddr,
-		"grpc_addr": grpcAddr, "rdma_addr": rdmaAddr,
-	})
-	joinURL := strings.TrimRight(leaderURL, "/") + node.NormalizeURIPrefix(uriPrefix) + "/v1/cluster/join"
-	req, err := http.NewRequest(http.MethodPost, joinURL, bytes.NewReader(body))
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode == http.StatusTemporaryRedirect || resp.StatusCode == http.StatusFound {
-		var out struct {
-			Leader string `json:"leader"`
-		}
-		_ = json.NewDecoder(resp.Body).Decode(&out)
-		if out.Leader != "" {
-			return out.Leader, nil
-		}
-		return "", fmt.Errorf("join status %d", resp.StatusCode)
-	}
-	if resp.StatusCode >= 300 {
-		return "", fmt.Errorf("join status %d", resp.StatusCode)
-	}
-	return "", nil
 }
 
 func dashboardAddr(httpListen, uriPrefix string) string {

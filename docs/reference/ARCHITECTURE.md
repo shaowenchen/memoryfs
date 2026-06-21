@@ -43,7 +43,14 @@ Helm 部署时 HTTP API 与 Dashboard 默认路径前缀为 `/memoryfs`（如 `/
 
 Follower 持续收到 Leader 心跳时不会选举。超时设太短会导致 **Election Storm**；太长则 Leader 故障后 failover 慢。
 
-**注意**：若 hostPath 残留旧 Raft 配置（例如 peer 地址仍是 `:8081` 而进程监听 `:19802`），Follower 永远收不到心跳，会周期性刷选举错误日志——需清 `/data/memoryfs/<instanceId>/` 后重装，而非调短超时。
+### 集群成员（pkg/cluster）
+
+StatefulSet 有序启动时的成员模型：
+
+1. **memoryfs-0** bootstrap → Raft Leader → `RegisterSelf`
+2. **memoryfs-1/2** 通过 HTTP `POST /v1/cluster/join` 向 Leader 注册
+3. Leader **`Admit`**：Raft 加 voter + KV 写入 + epoch 递增 → **`Sync` 返回全量节点列表**
+4. 节点列表经 Raft KV 复制到所有节点；join 响应携带 `nodes` 字段
 
 ## Chunk 存储
 

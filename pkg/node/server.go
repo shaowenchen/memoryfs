@@ -181,11 +181,12 @@ func (s *Server) handleJoin(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, fsResponse{Error: err.Error()})
 		return
 	}
-	if err := s.svc.Join(r.Context(), req.ID, req.RaftAddr, req.HTTPAddr, req.GRPCAddr, req.RDMAAddr); err != nil {
+	nodes, err := s.svc.Join(r.Context(), req.ID, req.RaftAddr, req.HTTPAddr, req.GRPCAddr, req.RDMAAddr)
+	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, fsResponse{Error: err.Error()})
 		return
 	}
-	writeJSON(w, http.StatusOK, fsResponse{})
+	writeJSON(w, http.StatusOK, fsResponse{Nodes: nodes})
 }
 
 func (s *Server) handleRemove(w http.ResponseWriter, r *http.Request) {

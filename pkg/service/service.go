@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/shaowenchen/memoryfs/pkg/chunk"
-	"github.com/shaowenchen/memoryfs/pkg/kv"
+	"github.com/shaowenchen/memoryfs/pkg/cluster"
 	"github.com/shaowenchen/memoryfs/pkg/lifecycle"
 	"github.com/shaowenchen/memoryfs/pkg/meta"
 	"github.com/shaowenchen/memoryfs/pkg/raftnode"
@@ -32,6 +32,7 @@ type Config struct {
 	DefaultTTL    time.Duration
 	RepairQueue   *RepairQueue
 	DiskQuotaGB   int64
+	Membership    *cluster.Membership
 }
 
 // Service implements core MemoryFS node logic shared by HTTP and gRPC.
@@ -50,8 +51,13 @@ func New(cfg Config) *Service {
 	if cfg.RepairQueue == nil {
 		cfg.RepairQueue = NewRepairQueue()
 	}
+	if cfg.Membership == nil && cfg.RaftNode != nil {
+		cfg.Membership = cluster.NewMembership(cfg.RaftNode, cfg.NodeID)
+	}
 	return &Service{cfg: cfg}
 }
+
+func (s *Service) Membership() *cluster.Membership { return s.cfg.Membership }
 
 func (s *Service) Meta() meta.Backend            { return s.cfg.Meta }
 func (s *Service) Chunks() chunk.Store           { return s.cfg.Chunks }
@@ -65,6 +71,9 @@ func (s *Service) LeaderHTTP() (string, error) {
 }
 
 func (s *Service) ListNodes(ctx context.Context) ([]string, error) {
+	if s.cfg.Membership != nil {
+		return s.cfg.Membership.ListHTTP(ctx)
+	}
 	return s.cfg.Meta.ListNodes(ctx)
 }
 
@@ -79,64 +88,40 @@ func (s *Service) PersistReplicaFactor() error {
 	return s.cfg.RaftNode.KV().Set(configRFKey, []byte(val))
 }
 
-func (s *Service) Join(ctx context.Context, id, raftAddr, httpAddr, grpcAddr, rdmaAddr string) error {
-	if !s.IsLeader() {
-		return fmt.Errorf("not leader")
+func (s *Service) Join(ctx context.Context, id, raftAddr, httpAddr, grpcAddr, rdmaAddr string) ([]string, error) {
+	if s.cfg.Membership == nil {
+		return nil, fmt.Errorf("membership not configured")
 	}
-	if err := s.cfg.RaftNode.AddVoter(id, raftAddr); err != nil {
-		return err
+	members, err := s.cfg.Membership.Admit(ctx, cluster.Member{
+		ID: id, Raft: raftAddr, HTTP: httpAddr, GRPC: grpcAddr, RDMA: rdmaAddr,
+	})
+	if err != nil {
+		return nil, err
 	}
-	ops := []kv.Op{
-		{Type: kv.OpHSet, Key: raftnode.NodesKey(), Field: id, Value: []byte(httpAddr)},
-		{Type: kv.OpSet, Key: raftnode.NodeHTTPKey(id), Value: []byte(httpAddr)},
-		{Type: kv.OpSet, Key: raftnode.NodeRaftKey(id), Value: []byte(raftAddr)},
-	}
-	if grpcAddr != "" {
-		ops = append(ops, kv.Op{Type: kv.OpSet, Key: nodeGRPCKey(id), Value: []byte(grpcAddr)})
-	}
-	if rdmaAddr != "" {
-		ops = append(ops, kv.Op{Type: kv.OpSet, Key: nodeRDMAKey(id), Value: []byte(rdmaAddr)})
-	}
-	ops = append(ops, kv.Op{Type: kv.OpIncr, Key: clusterEpochKey})
-	if rkv, ok := s.cfg.RaftNode.KV().(interface{ Batch([]kv.Op) error }); ok {
-		if err := rkv.Batch(ops); err != nil {
-			return err
+	s.syncClusterEpoch()
+	return memberHTTPURLs(members), nil
+}
+
+func memberHTTPURLs(members []cluster.Member) []string {
+	out := make([]string, 0, len(members))
+	for _, m := range members {
+		if m.HTTP != "" {
+			out = append(out, m.HTTP)
 		}
-		s.syncClusterEpoch()
-		return nil
 	}
-	return fmt.Errorf("kv batch not supported")
+	return out
 }
 
 // RemoveNode removes a node from the cluster (leader only).
 func (s *Service) RemoveNode(ctx context.Context, id string) error {
-	if !s.IsLeader() {
-		return fmt.Errorf("not leader")
+	if s.cfg.Membership == nil {
+		return fmt.Errorf("membership not configured")
 	}
-	raftData, err := s.cfg.RaftNode.KV().Get(raftnode.NodeRaftKey(id))
-	if err != nil {
-		return fmt.Errorf("node %s: %w", id, err)
-	}
-	if err := s.cfg.RaftNode.RemoveVoter(id); err != nil {
+	if err := s.cfg.Membership.Remove(ctx, id); err != nil {
 		return err
 	}
-	_ = raftData
-	ops := []kv.Op{
-		{Type: kv.OpHDel, Key: raftnode.NodesKey(), Field: id},
-		{Type: kv.OpDel, Key: raftnode.NodeHTTPKey(id)},
-		{Type: kv.OpDel, Key: raftnode.NodeRaftKey(id)},
-		{Type: kv.OpDel, Key: nodeGRPCKey(id)},
-		{Type: kv.OpDel, Key: nodeRDMAKey(id)},
-		{Type: kv.OpIncr, Key: clusterEpochKey},
-	}
-	if rkv, ok := s.cfg.RaftNode.KV().(interface{ Batch([]kv.Op) error }); ok {
-		if err := rkv.Batch(ops); err != nil {
-			return err
-		}
-		s.syncClusterEpoch()
-		return nil
-	}
-	return fmt.Errorf("kv batch not supported")
+	s.syncClusterEpoch()
+	return nil
 }
 
 // Leave drains local chunks and requests removal from the cluster.
@@ -175,9 +160,6 @@ func (s *Service) requestRemoveNode(ctx context.Context, leader, id string) erro
 	}
 	return nil
 }
-
-func nodeGRPCKey(id string) string { return "memoryfs:node:grpc:" + id }
-func nodeRDMAKey(id string) string { return "memoryfs:node:rdma:" + id }
 
 // GetChunkRegistry returns replica node URLs for a chunk from the registry.
 func (s *Service) GetChunkRegistry(_ context.Context, chunkID string) (*chunk.Location, error) {

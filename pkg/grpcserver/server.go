@@ -53,7 +53,7 @@ func (s *Server) Join(ctx context.Context, req *pb.JoinRequest) (*pb.JoinRespons
 		leader, _ := s.svc.LeaderHTTP()
 		return nil, status.Errorf(codes.FailedPrecondition, "not leader, try %s", leader)
 	}
-	if err := s.svc.Join(ctx, req.GetId(), req.GetRaftAddr(), req.GetHttpAddr(), req.GetGrpcAddr(), req.GetRdmaAddr()); err != nil {
+	if _, err := s.svc.Join(ctx, req.GetId(), req.GetRaftAddr(), req.GetHttpAddr(), req.GetGrpcAddr(), req.GetRdmaAddr()); err != nil {
 		return nil, status.Errorf(codes.Internal, "%v", err)
 	}
 	return &pb.JoinResponse{}, nil

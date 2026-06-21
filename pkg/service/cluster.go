@@ -3,9 +3,11 @@ package service
 import (
 	"fmt"
 	"strconv"
+
+	"github.com/shaowenchen/memoryfs/pkg/cluster"
 )
 
-const clusterEpochKey = "memoryfs:cluster:epoch"
+const clusterEpochKey = cluster.EpochKey
 
 // LoadClusterConfig reads persisted cluster settings from KV.
 func (s *Service) LoadClusterConfig() {
