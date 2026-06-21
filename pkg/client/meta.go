@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -198,34 +199,58 @@ func (r *RemoteMeta) post(ctx context.Context, path string, req fsReq, resp *fsR
 	var lastErr error
 	for _, base := range nodes {
 		url := base + path
-		if err := r.doPost(ctx, url, req, resp); err != nil {
-			lastErr = err
+		err := r.tryPost(ctx, url, path, req, resp, write)
+		if err == nil {
+			mountlog.Debugf("meta POST ok %s", url)
+			return nil
+		}
+		if !write && errors.Is(err, meta.ErrNotFound) {
+			return err
+		}
+		lastErr = err
+		if shouldWarnMetaErr(err, write) {
 			mountlog.Warnf("meta POST %s: %v", url, err)
-			if write && resp.Leader != "" {
-				leader := prefixedNodeURL(resp.Leader, r.uriPrefix)
-				r.mu.Lock()
-				r.leader = leader
-				r.mu.Unlock()
-				leaderURL := leader + path
-				mountlog.Infof("meta redirect to leader %s", leaderURL)
-				if err := r.doPost(ctx, leaderURL, req, resp); err == nil {
-					if resp.Error != "" {
-						return mapClientError(resp.Error)
-					}
-					mountlog.Debugf("meta POST ok %s", leaderURL)
-					return nil
-				}
-			}
-			continue
 		}
-		if resp.Error != "" {
-			mountlog.Warnf("meta POST %s: %s", url, resp.Error)
-			return mapClientError(resp.Error)
-		}
-		mountlog.Debugf("meta POST ok %s", url)
-		return nil
 	}
 	return lastErr
+}
+
+func (r *RemoteMeta) tryPost(ctx context.Context, url, path string, req fsReq, resp *fsResp, write bool) error {
+	if err := r.doPost(ctx, url, req, resp); err != nil {
+		if write && resp.Leader != "" {
+			leader := prefixedNodeURL(resp.Leader, r.uriPrefix)
+			r.SetLeader(leader)
+			leaderURL := leader + path
+			mountlog.Infof("meta redirect to leader %s", leaderURL)
+			if err := r.doPost(ctx, leaderURL, req, resp); err != nil {
+				return err
+			}
+			if resp.Error != "" {
+				return mapClientError(resp.Error)
+			}
+			return nil
+		}
+		return err
+	}
+	if resp.Error != "" {
+		return mapClientError(resp.Error)
+	}
+	return nil
+}
+
+func shouldWarnMetaErr(err error, _ bool) bool {
+	return !errors.Is(err, meta.ErrNotFound)
+}
+
+// SetLeader pins mutating metadata requests to the raft leader HTTP URL.
+func (r *RemoteMeta) SetLeader(leader string) {
+	leader = strings.TrimSpace(leader)
+	if leader == "" {
+		return
+	}
+	r.mu.Lock()
+	r.leader = prefixedNodeURL(leader, r.uriPrefix)
+	r.mu.Unlock()
 }
 
 func mapClientError(msg string) error {

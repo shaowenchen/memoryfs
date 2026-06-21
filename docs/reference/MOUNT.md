@@ -60,7 +60,8 @@ fusermount -u /mnt/memoryfs
 |------|------|
 | `connection refused` / DNS `server misbehaving` | 节点列表含 `*.svc.cluster.local` 说明注册地址不对；升级含 host IP 修复的镜像后 **重启全部 Pod**（follower 会 re-join 刷新地址），或清数据重装 |
 | Operation not supported | 拉最新镜像（需 FUSE Open 支持） |
-| write hang / 失败 | `nerdctl logs` 看 chunk PUT；确认 URI prefix `/memoryfs` |
+| write hang / 失败 | `nerdctl logs` 看 `meta redirect` / `fuse write`；确认 `-nodes` 用 **19800** 且 leader 为 host IP |
+| lookup `entry not found` 日志 | 创建文件前的 lookup 属正常；新版本不再轮询全部节点刷 warn |
 
 **日志级别：**
 

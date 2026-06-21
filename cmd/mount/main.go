@@ -67,6 +67,13 @@ func main() {
 	}
 	log.Printf("cluster ok: leader=%s rf=%d epoch=%d reachable_nodes=%d",
 		ov.Leader, ov.ReplicaFactor, ov.ClusterEpoch, reachableNodes(ov))
+	if ov.Leader != "" {
+		metaStore.SetLeader(prefixedLeaderURL(ov.Leader, prefix))
+		log.Printf("meta leader pinned: %s", ov.Leader)
+	}
+	if _, err := metaStore.ListNodes(context.Background()); err != nil {
+		log.Printf("warning: refresh meta nodes: %v", err)
+	}
 	for _, n := range ov.Nodes {
 		log.Printf("  node url=%s reachable=%v role=%s state=%s chunks=%d disk=%d",
 			n.URL, n.Reachable, n.Role, n.NodeState, n.Stats.ChunkCount, n.Stats.DiskBytes)
@@ -180,13 +187,6 @@ func reachableNodes(ov *service.ClusterOverview) int {
 	return n
 }
 
-func envOr(key, fallback string) string {
-	if v := strings.TrimSpace(os.Getenv(key)); v != "" {
-		return v
-	}
-	return fallback
-}
-
 func detectReplicaFactor(nodes []string) int {
 	if len(nodes) == 0 {
 		return chunk.DefaultReplicaFactor
@@ -200,4 +200,19 @@ func detectReplicaFactor(nodes []string) int {
 		return chunk.DefaultReplicaFactor
 	}
 	return ov.ReplicaFactor
+}
+
+func prefixedLeaderURL(leader, prefix string) string {
+	leader = strings.TrimRight(strings.TrimSpace(leader), "/")
+	if prefix == "" || strings.HasSuffix(leader, prefix) {
+		return leader
+	}
+	return leader + prefix
+}
+
+func envOr(key, fallback string) string {
+	if v := strings.TrimSpace(os.Getenv(key)); v != "" {
+		return v
+	}
+	return fallback
 }
