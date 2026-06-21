@@ -38,6 +38,7 @@ memoryfs benchmark [flags]  # 性能测试
 |------|------|
 | `-mount` | 挂载点（必填） |
 | `-nodes` | 节点 HTTP 列表，逗号分隔（必填）；填一个即可 |
+| `-size-gb` | `df -h` 显示的总容量（GB），默认 32；应与 Helm `node.storageGB` 一致 |
 | `-f` | 前台运行 |
 
 ## status / benchmark

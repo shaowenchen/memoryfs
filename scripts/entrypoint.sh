@@ -8,7 +8,7 @@ if [ -z "$cmd" ]; then
   echo "Examples:"
   echo "  memoryfs node -standalone -id n1 -http :19800 -data /data"
   echo "  memoryfs node-env   # start node from MEMORYFS_* env vars"
-  echo "  memoryfs mount -mount /mnt/memoryfs -nodes http://<node-ip>:19800 -f"
+  echo "  memoryfs mount -mount /mnt/memoryfs -nodes http://<host>:19800 -f"
   echo "  memoryfs status -nodes http://127.0.0.1:19800"
   echo "  memoryfs benchmark -nodes http://127.0.0.1:19800 -writes 50 -reads 50"
   exit 1

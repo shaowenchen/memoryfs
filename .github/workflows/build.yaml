@@ -72,27 +72,6 @@ jobs:
           tags: docker.io/shaowenchen/memoryfs:latest
           file: Dockerfile
 
-      - name: Login to secondary registry
-        if: ${{ secrets.ACR_REGISTRY != '' && secrets.ACR_USERNAME != '' }}
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ secrets.ACR_REGISTRY }}
-          username: ${{ secrets.ACR_USERNAME }}
-          password: ${{ secrets.ACR_PASSWORD }}
-
-      - name: Mirror image to secondary registry
-        if: ${{ secrets.ACR_REGISTRY != '' && secrets.ACR_REPOSITORY != '' }}
-        env:
-          ACR_REGISTRY: ${{ secrets.ACR_REGISTRY }}
-          ACR_REPOSITORY: ${{ secrets.ACR_REPOSITORY }}
-        run: |
-          export image=memoryfs:latest
-          docker run --rm -v ~/.docker/config.json:/auth.json quay.io/skopeo/stable copy \
-            docker://shaowenchen/${image} \
-            docker://${ACR_REGISTRY}/${ACR_REPOSITORY}/${image} \
-            --dest-authfile /auth.json --insecure-policy \
-            --src-tls-verify=false --dest-tls-verify=false --retry-times 5 --all
-
   helm-release:
     name: Publish Helm chart (latest)
     runs-on: ubuntu-latest

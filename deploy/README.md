@@ -71,7 +71,7 @@ helm upgrade --install memoryfs "${CHART}" \
 
 ```bash
 mount -mount /mnt/memoryfs \
-  -nodes http://<node-ip>:19800 \
+  -nodes http://<host>:19800 \
   -f
 ```
 
