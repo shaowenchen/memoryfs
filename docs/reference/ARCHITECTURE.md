@@ -77,7 +77,10 @@ K8s 滚动更新：StatefulSet + preStop drain + postStart ready + PDB。详见 
 
 ### 资源与 storageGB
 
-Helm 参数 `node.storageGB` 表示每节点 chunk 存储上限（GB）。Chart 自动设置 Pod 内存 **request/limit = storageGB + 1Gi**（额外 1Gi 预留给进程、Raft 与运行时开销）；磁盘配额 `diskQuotaGB` 与 `storageGB` 一致。
+Helm 参数 `node.storageGB` 表示每节点 chunk 存储上限（GB）。Chart 自动设置 Pod 内存 **request/limit = storageGB + 1Gi**（额外 1Gi 预留给进程、Raft 与运行时开销）。
+
+- **`diskSync` 关闭**（默认）：chunk 存内存，按 `storageGB` 做字节配额；`/v1/stats` 的 `disk_quota_bytes` 即该上限，实际用量在 `mem_cache_bytes`（随写入增长，**启动时不预分配空 chunk**）。
+- **`diskSync` 开启**：chunk 落盘，磁盘配额同样为 `storageGB`。
 
 ## 集群 Epoch
 

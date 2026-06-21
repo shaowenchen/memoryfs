@@ -171,6 +171,9 @@ type OpenStoreOptions struct {
 func OpenStoreWithOptions(opt OpenStoreOptions) (Store, error) {
 	switch opt.Backend {
 	case "memory":
+		if opt.DiskQuotaGB > 0 {
+			return NewQuotaMemory(opt.DiskQuotaGB << 30), nil
+		}
 		return NewMemoryStore(), nil
 	case "buffered":
 		if opt.Dir == "" {

@@ -1,6 +1,7 @@
 package chunk
 
 import (
+	"fmt"
 	"sort"
 	"sync"
 )
@@ -59,6 +60,43 @@ func (s *MemoryStore) Count() int {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return len(s.chunks)
+}
+
+// UsageBytes returns total bytes held in memory chunks.
+func (s *MemoryStore) UsageBytes() int64 {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var n int64
+	for _, data := range s.chunks {
+		n += int64(len(data))
+	}
+	return n
+}
+
+// QuotaMemory is an in-memory chunk store with a byte capacity (from storageGB).
+// Capacity is enforced on write; no placeholder chunks are allocated at startup.
+type QuotaMemory struct {
+	*MemoryStore
+	quotaBytes int64
+}
+
+// NewQuotaMemory creates a memory store limited to quotaBytes (0 = unlimited).
+func NewQuotaMemory(quotaBytes int64) *QuotaMemory {
+	return &QuotaMemory{MemoryStore: NewMemoryStore(), quotaBytes: quotaBytes}
+}
+
+func (q *QuotaMemory) Put(id string, data []byte) error {
+	if q.quotaBytes > 0 {
+		used := q.UsageBytes()
+		oldSize := int64(0)
+		if old, ok := q.MemoryStore.Get(id); ok {
+			oldSize = int64(len(old))
+		}
+		if used-oldSize+int64(len(data)) > q.quotaBytes {
+			return fmt.Errorf("memory quota exceeded")
+		}
+	}
+	return q.MemoryStore.Put(id, data)
 }
 
 // Deprecated: use NewMemoryStore.

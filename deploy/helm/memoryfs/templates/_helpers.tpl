@@ -53,11 +53,7 @@ podAntiAffinity:
 {{- end }}
 
 {{- define "memoryfs.diskQuotaGB" -}}
-{{- if .Values.node.diskSync.enabled -}}
 {{- .Values.node.storageGB -}}
-{{- else -}}
-0
-{{- end -}}
 {{- end }}
 
 {{- define "memoryfs.nodeSecurityContext" -}}

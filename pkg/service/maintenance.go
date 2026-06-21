@@ -44,6 +44,10 @@ func (s *Service) Stats() Stats {
 		if used, err := ds.UsageBytes(); err == nil {
 			st.DiskBytes = used
 		}
+	} else if qm, ok := s.cfg.Chunks.(*chunk.QuotaMemory); ok {
+		st.MemCacheBytes = qm.UsageBytes()
+	} else if ms, ok := s.cfg.Chunks.(*chunk.MemoryStore); ok {
+		st.MemCacheBytes = ms.UsageBytes()
 	}
 	return st
 }
