@@ -32,16 +32,18 @@ if [ -n "${POD_NAME:-}" ] && [ "${BOOTSTRAP}" != "true" ] && [ "${STANDALONE}" !
 fi
 
 if [ -n "${MEMORYFS_INSTANCE_ID:-}" ] && [ -n "${MEMORYFS_STORAGE_ROOT:-}" ]; then
-  DATA="${MEMORYFS_STORAGE_ROOT}/${MEMORYFS_INSTANCE_ID}/${ID}"
+  DATA="${MEMORYFS_STORAGE_ROOT}/${MEMORYFS_INSTANCE_ID}"
+  NODE_DATA="${DATA}/${ID}"
 else
   DATA="${MEMORYFS_DATA:-/data}"
+  NODE_DATA="${DATA}/${ID}"
 fi
-CHUNK_DIR="${MEMORYFS_CHUNK_DIR:-${DATA}/chunks}"
-mkdir -p "${DATA}" "${CHUNK_DIR}"
+CHUNK_DIR="${MEMORYFS_CHUNK_DIR:-${NODE_DATA}/chunks}"
+mkdir -p "${NODE_DATA}" "${CHUNK_DIR}"
 
 if [ "${MEMORYFS_RAFT_RESET:-}" = "true" ]; then
-  echo "memoryfs: MEMORYFS_RAFT_RESET=true, clearing raft state in ${DATA}"
-  rm -rf "${DATA}/raft.db" "${DATA}/snapshots"
+  echo "memoryfs: MEMORYFS_RAFT_RESET=true, clearing raft state in ${NODE_DATA}"
+  rm -rf "${NODE_DATA}/raft.db" "${NODE_DATA}/snapshots"
 fi
 
 CHUNK_BACKEND="${MEMORYFS_CHUNK_BACKEND:-tiered}"
@@ -83,7 +85,7 @@ if [ -n "${MEMORYFS_RAFT_URL:-}" ]; then
   ADVERTISE_RAFT="${MEMORYFS_RAFT_URL}"
 fi
 
-echo "memoryfs node-env: id=${ID} bootstrap=${BOOTSTRAP} join=${JOIN:-<none>} data=${DATA}"
+echo "memoryfs node-env: id=${ID} bootstrap=${BOOTSTRAP} join=${JOIN:-<none>} data=${NODE_DATA}"
 
 set -- \
   -id "${ID}" \
