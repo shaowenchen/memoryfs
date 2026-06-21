@@ -72,20 +72,18 @@ jobs:
           tags: docker.io/shaowenchen/memoryfs:latest
           file: Dockerfile
 
-      - name: Login to ACR
-        if: ${{ secrets.ACR_REGISTRY != '' && secrets.ACR_USERNAME != '' }}
-        uses: docker/login-action@v3
-        with:
-          registry: https://${{ secrets.ACR_REGISTRY }}
-          username: ${{ secrets.ACR_USERNAME }}
-          password: ${{ secrets.ACR_PASSWORD }}
-
       - name: Push memoryfs to ACR
-        if: ${{ secrets.ACR_REGISTRY != '' && secrets.ACR_REPOSITORY != '' }}
         env:
           ACR_REGISTRY: ${{ secrets.ACR_REGISTRY }}
           ACR_REPOSITORY: ${{ secrets.ACR_REPOSITORY }}
+          ACR_USERNAME: ${{ secrets.ACR_USERNAME }}
+          ACR_PASSWORD: ${{ secrets.ACR_PASSWORD }}
         run: |
+          if [ -z "${ACR_REGISTRY}" ] || [ -z "${ACR_REPOSITORY}" ] || [ -z "${ACR_USERNAME}" ] || [ -z "${ACR_PASSWORD}" ]; then
+            echo "ACR secrets not set, skipping mirror."
+            exit 0
+          fi
+          echo "${ACR_PASSWORD}" | docker login "${ACR_REGISTRY}" -u "${ACR_USERNAME}" --password-stdin
           docker run --rm -v ~/.docker/config.json:/auth.json quay.io/skopeo/stable copy \
             docker://shaowenchen/memoryfs:latest \
             docker://${ACR_REGISTRY}/${ACR_REPOSITORY}:latest \
