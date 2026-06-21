@@ -81,7 +81,17 @@ helm uninstall memoryfs -n memoryfs
 
 ## 文档
 
-[docs/](docs/) · [部署与运维](deploy/README.md)
+[docs/](docs/) · [部署与运维](deploy/README.md) · [AI 开发指南](AGENTS.md)
+
+## AI 辅助开发
+
+本项目采用 [Superpowers 方法论](https://www.chenshaowen.com/blog/superpowers-software-engineering-methodology-for-ai.html)：
+
+- [AGENTS.md](AGENTS.md) — Agent 入口与全局约束
+- [docs/superpowers/](docs/superpowers/) — 设计规格与实现计划
+- `.cursor/skills/` — 项目 Skills（brainstorming、TDD、调试等）
+
+可选：在 Cursor 中安装官方插件 `/add-plugin superpowers`。
 
 ## License
 

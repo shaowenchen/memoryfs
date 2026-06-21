@@ -1,0 +1,46 @@
+---
+description: Superpowers bootstrap — invoke project skills before any task
+alwaysApply: true
+---
+
+# Using Superpowers (Bootstrap)
+
+会话开始时遵循 Superpowers 方法论。完整说明见 [AGENTS.md](../../AGENTS.md)。
+
+## 铁律
+
+只要有 **1%** 的可能某个 skill 适用，就必须先读取并遵循 `.cursor/skills/<name>/SKILL.md`。
+
+**在回复、澄清、读代码、写代码之前** 先检查 skills。
+
+## Skill 优先级
+
+1. 用户显式指令
+2. Process skills：`brainstorming`、`systematic-debugging`
+3. Implementation skills：`writing-plans`、`test-driven-development`、`memoryfs-development`
+4. 默认行为
+
+## 触发映射
+
+| 用户意图 | 必须先用的 skill |
+|----------|------------------|
+| 新功能 / 行为变更 / 「做一个…」 | `brainstorming` |
+| 设计已批准，要写计划 | `writing-plans` |
+| 写/改 Go 代码 | `test-driven-development` + `memoryfs-development` |
+| Bug / 卡住 / 报错 | `systematic-debugging` |
+| 「修好了」「完成了」 | `verification-before-completion` |
+
+## Red Flags（立即停止并读 skill）
+
+- 「这只是个小改动」→ 仍要走流程
+- 「先看下代码」→ skill 告诉你如何探索
+- 「我记得这个 skill」→ 必须读当前版本
+- 「太简单不需要设计」→ **禁止**
+
+## 设计文档路径
+
+`docs/superpowers/specs/YYYY-MM-DD-<topic>-design.md`
+
+## 计划文档路径
+
+`docs/superpowers/plans/YYYY-MM-DD-<topic>.md`

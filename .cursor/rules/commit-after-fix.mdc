@@ -7,9 +7,12 @@ alwaysApply: true
 
 After completing a bug fix or code change in this repo:
 
-1. Run `git status` and `git diff` to verify the change set.
-2. Commit with a concise message focused on **why** (not only what).
-3. Push to `origin/master` unless the user explicitly asks not to push.
+1. Run `verification-before-completion` skill checks (`go test ./...`).
+2. Run `git status` and `git diff` to verify the change set.
+3. Commit with a concise message focused on **why** (not only what).
+4. Push to `origin/master` unless the user explicitly asks not to push.
+
+Design/plan docs in `docs/superpowers/` should be committed when approved.
 
 Do not leave fixes uncommitted at the end of a turn. If the user only asked a question with no code change, skip commit.
 
