@@ -78,7 +78,7 @@ func main() {
 		rf = detectReplicaFactor(nodeList)
 	}
 	chunkNodes := metaStore.Nodes()
-	chunks := storage.NewHTTPChunkStore(metaStore, chunkNodes, rf)
+	chunks := storage.NewHTTPChunkStore(metaStore, chunkNodes, rf, prefix)
 	if err := chunks.RefreshNodes(context.Background()); err != nil {
 		log.Printf("warning: refresh nodes: %v", err)
 	}
@@ -86,7 +86,7 @@ func main() {
 		log.Fatal("no cluster nodes available; check -nodes URLs")
 	}
 	log.Printf("replica factor: %d", rf)
-	log.Printf("using nodes: %v", chunks.Nodes())
+	log.Printf("chunk I/O nodes (discovered): %v", chunks.Nodes())
 
 	sizeBytes := uint64(*sizeGB) << 30
 	usedFn := func(ctx context.Context) uint64 {
@@ -118,7 +118,7 @@ func main() {
 	log.Printf("mount container must keep running; if it exits the host bind mount shows 'Transport endpoint is not connected'")
 
 	if *verbose {
-		go heartbeat(apiClient, chunkNodes)
+		go heartbeat(apiClient, chunks)
 	}
 
 	if *foreground {
@@ -135,19 +135,22 @@ func main() {
 	log.Printf("FUSE server exited; %s is stale until you run: fusermount -u %s", *mountPoint, *mountPoint)
 }
 
-func heartbeat(c *cli.Client, nodes []string) {
+func heartbeat(c *cli.Client, chunks *storage.ChunkStore) {
 	t := time.NewTicker(60 * time.Second)
 	defer t.Stop()
 	for range t.C {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		if err := chunks.RefreshNodes(ctx); err != nil {
+			mountlog.Warnf("heartbeat: refresh nodes: %v", err)
+		}
 		ov, err := c.Overview(ctx)
 		cancel()
 		if err != nil {
 			log.Printf("heartbeat: cluster unreachable: %v", err)
 			continue
 		}
-		log.Printf("heartbeat: leader=%s epoch=%d used=%d bytes nodes=%d",
-			ov.Leader, ov.ClusterEpoch, usedBytesForNodes(ov, nodes), reachableNodes(ov))
+		log.Printf("heartbeat: leader=%s epoch=%d chunk_nodes=%d cluster_nodes=%d",
+			ov.Leader, ov.ClusterEpoch, len(chunks.Nodes()), reachableNodes(ov))
 	}
 }
 

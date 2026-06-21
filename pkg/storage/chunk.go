@@ -12,45 +12,65 @@ import (
 	"github.com/shaowenchen/memoryfs/pkg/transport"
 )
 
+// ReplicaLookup resolves chunk replica node URLs from cluster metadata.
+type ReplicaLookup interface {
+	ChunkReplicas(ctx context.Context, chunkID string) ([]string, error)
+}
+
 // ChunkStore reads and writes file chunks via MemoryFS nodes.
 type ChunkStore struct {
 	mu            sync.RWMutex
+	seeds         []string
 	nodes         []string
+	uriPrefix     string
 	meta          meta.Backend
+	replicaLookup ReplicaLookup
 	transport     transport.ChunkTransport
 	replicaFactor int
 }
 
 // NewChunkStore creates a chunk store with multi-protocol transport.
-func NewChunkStore(metaStore meta.Backend, nodes []string, replicaFactor int) *ChunkStore {
+func NewChunkStore(metaStore meta.Backend, seeds []string, replicaFactor int) *ChunkStore {
 	httpTP := transport.NewHTTPTransport()
 	grpcTP := transport.NewGRPCTransport()
 	rdmaTP := transport.NewRDMATransport(grpcTP)
-	return newChunkStore(metaStore, nodes, replicaFactor, transport.NewMultiTransport(rdmaTP, grpcTP, httpTP))
+	return newChunkStore(metaStore, seeds, replicaFactor, transport.NewMultiTransport(rdmaTP, grpcTP, httpTP), "")
 }
 
 // NewHTTPChunkStore creates a chunk store that uses HTTP chunk endpoints only.
-// FUSE mount clients should use this to avoid gRPC/RDMA fallback latency on
-// prefixed HTTP node URLs.
-func NewHTTPChunkStore(metaStore meta.Backend, nodes []string, replicaFactor int) *ChunkStore {
-	return newChunkStore(metaStore, nodes, replicaFactor, transport.NewHTTPTransport())
+func NewHTTPChunkStore(metaStore meta.Backend, seeds []string, replicaFactor int, uriPrefix string) *ChunkStore {
+	c := newChunkStore(metaStore, seeds, replicaFactor, transport.NewHTTPTransport(), uriPrefix)
+	if rl, ok := metaStore.(ReplicaLookup); ok {
+		c.replicaLookup = rl
+	}
+	return c
 }
 
-func newChunkStore(metaStore meta.Backend, nodes []string, replicaFactor int, tp transport.ChunkTransport) *ChunkStore {
+func newChunkStore(metaStore meta.Backend, seeds []string, replicaFactor int, tp transport.ChunkTransport, uriPrefix string) *ChunkStore {
 	if replicaFactor <= 0 {
 		replicaFactor = chunk.DefaultReplicaFactor
 	}
+	seeds = append([]string(nil), seeds...)
 	return &ChunkStore{
-		nodes:         append([]string(nil), nodes...),
+		seeds:         seeds,
+		nodes:         append([]string(nil), seeds...),
+		uriPrefix:     strings.TrimSuffix(strings.TrimSpace(uriPrefix), "/"),
 		meta:          metaStore,
 		transport:     tp,
 		replicaFactor: replicaFactor,
 	}
 }
 
-// RefreshNodes keeps configured seed nodes for chunk I/O (no cluster-wide fan-out).
+// RefreshNodes discovers cluster nodes via metadata and merges with seed URLs.
 func (c *ChunkStore) RefreshNodes(ctx context.Context) error {
-	_ = ctx
+	discovered, err := c.meta.ListNodes(ctx)
+	if err != nil {
+		return err
+	}
+	c.mu.Lock()
+	c.nodes = mergeNodeURLs(c.seeds, discovered)
+	c.mu.Unlock()
+	mountlog.Infof("chunk store nodes refreshed: %v", c.Nodes())
 	return nil
 }
 
@@ -63,10 +83,11 @@ func mergeNodeURLs(existing, discovered []string) []string {
 			if n == "" {
 				continue
 			}
-			if _, ok := seen[n]; ok {
+			key := nodeKey(n)
+			if _, ok := seen[key]; ok {
 				continue
 			}
-			seen[n] = struct{}{}
+			seen[key] = struct{}{}
 			out = append(out, n)
 		}
 	}
@@ -75,7 +96,34 @@ func mergeNodeURLs(existing, discovered []string) []string {
 	return out
 }
 
-// Nodes returns current node URLs.
+func nodeKey(raw string) string {
+	raw = strings.TrimPrefix(strings.TrimPrefix(strings.TrimSpace(raw), "http://"), "https://")
+	if i := strings.Index(raw, "/"); i >= 0 {
+		raw = raw[:i]
+	}
+	return strings.TrimRight(raw, "/")
+}
+
+func applyNodePrefix(nodes []string, prefix string) []string {
+	prefix = strings.TrimSuffix(strings.TrimSpace(prefix), "/")
+	if prefix == "" {
+		return append([]string(nil), nodes...)
+	}
+	out := make([]string, 0, len(nodes))
+	for _, n := range nodes {
+		n = strings.TrimRight(strings.TrimSpace(n), "/")
+		if n == "" {
+			continue
+		}
+		if !strings.HasSuffix(n, prefix) {
+			n = n + prefix
+		}
+		out = append(out, n)
+	}
+	return out
+}
+
+// Nodes returns current cluster node URLs for chunk I/O.
 func (c *ChunkStore) Nodes() []string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -84,12 +132,20 @@ func (c *ChunkStore) Nodes() []string {
 	return out
 }
 
-func (c *ChunkStore) selectNodes(chunkID string, rf int) ([]string, error) {
-	return chunk.SelectNodes(c.Nodes(), chunkID, rf)
-}
+func (c *ChunkStore) nodesForChunk(ctx context.Context, chunkID string) []string {
+	cluster := applyNodePrefix(c.Nodes(), c.uriPrefix)
 
-func (c *ChunkStore) nodesForChunk(chunkID string) []string {
-	return c.Nodes()
+	if c.replicaLookup != nil {
+		reps, err := c.replicaLookup.ChunkReplicas(ctx, chunkID)
+		if err == nil && len(reps) > 0 {
+			return applyNodePrefix(reps, c.uriPrefix)
+		}
+	}
+
+	if selected, err := chunk.SelectNodes(cluster, chunkID, c.replicaFactor); err == nil {
+		return selected
+	}
+	return cluster
 }
 
 // Read reads up to len(dest) bytes at offset from a file identified by attr.
@@ -191,7 +247,7 @@ func (c *ChunkStore) DeleteChunks(ctx context.Context, attr *meta.Attr) {
 }
 
 func (c *ChunkStore) readChunk(ctx context.Context, chunkID string) ([]byte, error) {
-	nodes := c.nodesForChunk(chunkID)
+	nodes := c.nodesForChunk(ctx, chunkID)
 	if len(nodes) == 0 {
 		return nil, ErrNoNodes
 	}
@@ -209,7 +265,7 @@ func (c *ChunkStore) readChunk(ctx context.Context, chunkID string) ([]byte, err
 }
 
 func (c *ChunkStore) writeChunk(ctx context.Context, chunkID string, data []byte) error {
-	nodes := c.nodesForChunk(chunkID)
+	nodes := c.nodesForChunk(ctx, chunkID)
 	if len(nodes) == 0 {
 		return ErrNoNodes
 	}
@@ -228,7 +284,7 @@ func (c *ChunkStore) writeChunk(ctx context.Context, chunkID string, data []byte
 }
 
 func (c *ChunkStore) deleteChunk(ctx context.Context, chunkID string) error {
-	nodes := c.nodesForChunk(chunkID)
+	nodes := c.nodesForChunk(ctx, chunkID)
 	if len(nodes) == 0 {
 		return ErrNoNodes
 	}
@@ -272,17 +328,17 @@ func maxLen(a, b int) int {
 	return b
 }
 
-func (c *ChunkStore) selectNode(chunkID string) (string, error) {
-	nodes, err := c.selectNodes(chunkID, 1)
-	if err != nil {
-		return "", err
+func (c *ChunkStore) selectNode(ctx context.Context, chunkID string) (string, error) {
+	nodes := c.nodesForChunk(ctx, chunkID)
+	if len(nodes) == 0 {
+		return "", ErrNoNodes
 	}
 	return nodes[0], nil
 }
 
 // SelectNode exposes primary node for a chunk (testing).
 func (c *ChunkStore) SelectNode(chunkID string) (string, error) {
-	return c.selectNode(chunkID)
+	return c.selectNode(context.Background(), chunkID)
 }
 
 // WriteChunkDirect writes to a specific node (testing).

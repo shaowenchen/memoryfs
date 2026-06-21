@@ -33,7 +33,8 @@ FUSE/mount ──HTTP──► Node 集群
 ## Key Constraints
 
 - HTTP URI prefix 默认 `/memoryfs`（Helm）
-- FUSE mount 客户端 chunk I/O：**HTTP only**
+- FUSE mount 从种子节点 **发现全集群节点**；chunk 按 registry 副本位置 **直连数据节点** 读写
+- 可挂载多个种子节点（逗号分隔 `-nodes`）实现元数据/chunk 访问高可用
 - Mount 容器必须持续运行
 - 副本因子 RF 默认 2，节点数 ≥ RF
 

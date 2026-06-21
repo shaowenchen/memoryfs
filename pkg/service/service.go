@@ -178,6 +178,14 @@ func (s *Service) requestRemoveNode(ctx context.Context, leader, id string) erro
 func nodeGRPCKey(id string) string { return "memoryfs:node:grpc:" + id }
 func nodeRDMAKey(id string) string { return "memoryfs:node:rdma:" + id }
 
+// GetChunkRegistry returns replica node URLs for a chunk from the registry.
+func (s *Service) GetChunkRegistry(_ context.Context, chunkID string) (*chunk.Location, error) {
+	if s.cfg.Registry == nil {
+		return nil, fmt.Errorf("no registry")
+	}
+	return s.cfg.Registry.Get(chunkID)
+}
+
 // StoreChunkLocal writes chunk to local disk/memory only (peer replication).
 func (s *Service) StoreChunkLocal(chunkID string, data []byte) error {
 	return s.cfg.Chunks.Put(chunkID, data)

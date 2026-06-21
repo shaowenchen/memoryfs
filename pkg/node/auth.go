@@ -38,6 +38,8 @@ func requiresAuth(r *http.Request) bool {
 	case strings.HasPrefix(path, "/v1/fs/getattr"), strings.HasPrefix(path, "/v1/fs/lookup"),
 		strings.HasPrefix(path, "/v1/fs/readdir"):
 		return false
+	case path == "/v1/chunks/registry/get":
+		return false
 	case strings.HasPrefix(path, "/v1/cluster/leader"), strings.HasPrefix(path, "/v1/cluster/nodes"):
 		return false
 	case r.Method == http.MethodGet && strings.HasPrefix(path, "/chunks/"):

@@ -69,6 +69,7 @@ type fsReq struct {
 	NewParent  uint64 `json:"new_parent,omitempty"`
 	OldName    string `json:"old_name,omitempty"`
 	NewName    string `json:"new_name,omitempty"`
+	ChunkID    string `json:"chunk_id,omitempty"`
 	Attr       *meta.Attr `json:"attr,omitempty"`
 }
 
@@ -77,6 +78,8 @@ type fsResp struct {
 	Attrs  map[string]*meta.Attr `json:"attrs,omitempty"`
 	Nodes  []string         `json:"nodes,omitempty"`
 	Leader string           `json:"leader,omitempty"`
+	Replicas []string       `json:"replicas,omitempty"`
+	ChunkID  string         `json:"chunk_id,omitempty"`
 	Error  string           `json:"error,omitempty"`
 }
 
@@ -165,6 +168,18 @@ func (r *RemoteMeta) ListNodes(ctx context.Context) ([]string, error) {
 	return resp.Nodes, nil
 }
 
+// ChunkReplicas returns node URLs that store replicas for a chunk.
+func (r *RemoteMeta) ChunkReplicas(ctx context.Context, chunkID string) ([]string, error) {
+	var resp fsResp
+	if err := r.post(ctx, "/v1/chunks/registry/get", fsReq{ChunkID: chunkID}, &resp, false); err != nil {
+		return nil, err
+	}
+	if len(resp.Replicas) == 0 {
+		return nil, fmt.Errorf("no replicas")
+	}
+	return applyNodePrefix(resp.Replicas, r.uriPrefix), nil
+}
+
 func (r *RemoteMeta) ListInos(context.Context) ([]uint64, error) {
 	return nil, fmt.Errorf("ListInos not supported on remote meta")
 }
@@ -176,7 +191,7 @@ func (r *RemoteMeta) PurgeInode(context.Context, uint64) error {
 func (r *RemoteMeta) Close() error { return nil }
 
 func (r *RemoteMeta) post(ctx context.Context, path string, req fsReq, resp *fsResp, write bool) error {
-	nodes := r.nodeList()
+	nodes := r.nodeList(write)
 	if len(nodes) == 0 {
 		return fmt.Errorf("no nodes configured")
 	}
@@ -193,7 +208,13 @@ func (r *RemoteMeta) post(ctx context.Context, path string, req fsReq, resp *fsR
 				r.mu.Unlock()
 				leaderURL := leader + path
 				mountlog.Infof("meta redirect to leader %s", leaderURL)
-				return r.doPost(ctx, leaderURL, req, resp)
+				if err := r.doPost(ctx, leaderURL, req, resp); err == nil {
+					if resp.Error != "" {
+						return mapClientError(resp.Error)
+					}
+					mountlog.Debugf("meta POST ok %s", leaderURL)
+					return nil
+				}
 			}
 			continue
 		}
@@ -261,10 +282,10 @@ func (r *RemoteMeta) doPost(ctx context.Context, url string, req fsReq, resp *fs
 	return nil
 }
 
-func (r *RemoteMeta) nodeList() []string {
+func (r *RemoteMeta) nodeList(write bool) []string {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	if r.leader != "" {
+	if write && r.leader != "" {
 		return []string{r.leader}
 	}
 	out := make([]string, len(r.nodes))

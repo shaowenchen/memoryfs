@@ -1,6 +1,10 @@
 # FUSE 挂载
 
-默认挂载目录 **`/mnt/memoryfs`**。`-nodes` 填要连接的节点 HTTP 地址；chunk 读写仅走该节点本地数据（不自动从其他副本拉取）。
+默认挂载目录 **`/mnt/memoryfs`**。
+
+- **任意节点可挂载**：`-nodes` 填集群中任一节点（可逗号分隔多个），客户端会自动发现全部节点
+- **全集群数据可见**：元数据在各节点；chunk 按 registry 副本位置从对应数据节点直接读取
+- **多节点高可用**：多个 seed URL，读写会尝试其他副本/节点
 
 ## 前提
 
@@ -27,7 +31,7 @@ nerdctl run -d --privileged --name memoryfs-mount \
   --restart unless-stopped \
   shaowenchen/memoryfs:latest \
   mount -mount /mnt/memoryfs \
-  -nodes http://10.0.0.3:8080 \
+  -nodes http://10.0.0.3:8080,http://10.0.0.4:8080 \
   -size-gb 32 -v -f
 ```
 

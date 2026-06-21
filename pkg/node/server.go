@@ -57,6 +57,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/v1/gc", s.handleGC)
 	s.mux.HandleFunc("/v1/chunks/registry/set", s.handleWrite(s.registrySet))
 	s.mux.HandleFunc("/v1/chunks/registry/delete", s.handleWrite(s.registryDelete))
+	s.mux.HandleFunc("/v1/chunks/registry/get", s.handleFS(s.registryGet))
 	s.mux.HandleFunc("/v1/fs/getattr", s.handleFS(s.getattr))
 	s.mux.HandleFunc("/v1/fs/lookup", s.handleFS(s.lookup))
 	s.mux.HandleFunc("/v1/fs/readdir", s.handleFS(s.readdir))
@@ -118,6 +119,8 @@ type fsResponse struct {
 	RepairFixed      int                   `json:"repair_fixed,omitempty"`
 	RepairFailed     int                   `json:"repair_failed,omitempty"`
 	RepairPending    int                   `json:"repair_pending,omitempty"`
+	Replicas         []string              `json:"replicas,omitempty"`
+	ChunkID          string                `json:"chunk_id,omitempty"`
 }
 
 type joinRequest struct {
@@ -397,6 +400,17 @@ func (s *Server) registrySet(ctx context.Context, req fsRequest) (fsResponse, in
 		return fsResponse{Error: err.Error()}, http.StatusInternalServerError
 	}
 	return fsResponse{}, http.StatusOK
+}
+
+func (s *Server) registryGet(ctx context.Context, req fsRequest) (fsResponse, int) {
+	if req.ChunkID == "" {
+		return fsResponse{Error: "missing chunk_id"}, http.StatusBadRequest
+	}
+	loc, err := s.svc.GetChunkRegistry(ctx, req.ChunkID)
+	if err != nil {
+		return fsResponse{Error: "not found"}, http.StatusNotFound
+	}
+	return fsResponse{ChunkID: req.ChunkID, Replicas: loc.Replicas}, http.StatusOK
 }
 
 func (s *Server) registryDelete(ctx context.Context, req fsRequest) (fsResponse, int) {
