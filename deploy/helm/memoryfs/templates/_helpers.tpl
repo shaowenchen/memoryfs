@@ -53,7 +53,7 @@ podAntiAffinity:
 {{- end }}
 
 {{- define "memoryfs.diskQuotaGB" -}}
-{{- .Values.node.storageGB -}}
+{{- printf "%d" (int .Values.node.storageGB) -}}
 {{- end }}
 
 {{- define "memoryfs.nodeSecurityContext" -}}

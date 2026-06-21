@@ -46,10 +46,19 @@ if [ "${MEMORYFS_RAFT_RESET:-}" = "true" ]; then
   rm -rf "${NODE_DATA}/raft.db" "${NODE_DATA}/snapshots"
 fi
 
+normalize_uint() {
+  _v="$(printf '%s' "$1" | tr -cd '0-9')"
+  if [ -z "$_v" ]; then
+    printf '0'
+  else
+    printf '%s' "$_v"
+  fi
+}
+
 CHUNK_BACKEND="${MEMORYFS_CHUNK_BACKEND:-tiered}"
-REPLICA_FACTOR="${MEMORYFS_REPLICA_FACTOR:-2}"
-MEM_CACHE_MB="${MEMORYFS_MEM_CACHE_MB:-512}"
-DISK_QUOTA_GB="${MEMORYFS_DISK_QUOTA_GB:-0}"
+REPLICA_FACTOR="$(normalize_uint "${MEMORYFS_REPLICA_FACTOR:-2}")"
+MEM_CACHE_MB="$(normalize_uint "${MEMORYFS_MEM_CACHE_MB:-512}")"
+DISK_QUOTA_GB="$(normalize_uint "${MEMORYFS_DISK_QUOTA_GB:-0}")"
 GC_INTERVAL="${MEMORYFS_GC_INTERVAL:-5m}"
 FLUSH_INTERVAL="${MEMORYFS_FLUSH_INTERVAL:-30s}"
 DEFAULT_TTL="${MEMORYFS_DEFAULT_TTL:-0}"
