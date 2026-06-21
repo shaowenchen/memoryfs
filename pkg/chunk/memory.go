@@ -89,7 +89,7 @@ func (q *QuotaMemory) Put(id string, data []byte) error {
 	if q.quotaBytes > 0 {
 		used := q.UsageBytes()
 		oldSize := int64(0)
-		if old, ok := q.MemoryStore.Get(id); ok {
+		if old, ok := q.Get(id); ok {
 			oldSize = int64(len(old))
 		}
 		if used-oldSize+int64(len(data)) > q.quotaBytes {
