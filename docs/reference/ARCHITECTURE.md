@@ -29,6 +29,21 @@ Helm 部署时 HTTP API 与 Dashboard 默认路径前缀为 `/memoryfs`（如 `/
 - 每个节点内置 KV，写操作经 Raft 复制到多数派
 - Log/Stable 持久化到 `{data}/{id}/raft.db`
 - inode、目录项、chunk 索引、节点注册、集群 epoch 均存于 KV
+- **memoryfs-0** bootstrap 后即为 Leader；follower join 成功后只收心跳，不主动选举
+
+### Raft 时序
+
+与 etcd 类似，MemoryFS 使用 hashicorp/raft，默认：
+
+| 参数 | 值 | 含义 |
+|------|-----|------|
+| HeartbeatTimeout | 1s | Follower 超过此时间未收到 Leader 联系则发起选举 |
+| Leader 心跳 | ~100ms | Leader 约每 `HeartbeatTimeout/10` 发送 AppendEntries |
+| ElectionTimeout | 1s | Candidate 轮询超时 |
+
+Follower 持续收到 Leader 心跳时不会选举。超时设太短会导致 **Election Storm**；太长则 Leader 故障后 failover 慢。
+
+**注意**：若 hostPath 残留旧 Raft 配置（例如 peer 地址仍是 `:8081` 而进程监听 `:19802`），Follower 永远收不到心跳，会周期性刷选举错误日志——需清 `/data/memoryfs/<instanceId>/` 后重装，而非调短超时。
 
 ## Chunk 存储
 

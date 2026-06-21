@@ -73,6 +73,7 @@ func Start(cfg Config) (*Node, error) {
 
 	raftCfg := raft.DefaultConfig()
 	raftCfg.LocalID = raft.ServerID(cfg.ID)
+	configureRaft(raftCfg)
 	raftCfg.SnapshotInterval = 30 * time.Second
 	raftCfg.SnapshotThreshold = 128
 

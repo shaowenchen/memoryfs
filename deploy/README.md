@@ -366,6 +366,7 @@ helm upgrade --install memoryfs "${CHART}" -n memoryfs --create-namespace
 | `meta store: not leader` | 确保 memoryfs-0 先 Ready；`helm upgrade` 拉取含修复的新镜像 |
 | 节点 `draining` 卡住 | 检查 peer 可达；必要时 `drain?force=true` |
 | chunk 缺失 | `node-rebuild.sh` 或 restart（自动 ready） |
+| Raft 日志大量 `:8081 connection refused` | hostPath 残留旧端口 Raft 成员地址；清各节点 `/data/memoryfs/<instanceId>/` 后 `helm uninstall` 再装 |
 | memoryfs-0 `0/1`、Raft 连不上其它节点 19802 | 多为旧 Raft 状态（3 节点配置但 1/2 未起）；删 Pod 让 1/2 跟上，仍失败则在各节点清 `/data/memoryfs/<instanceId>/` 后重装 |
 | Raft 无 leader | 保证 quorum 节点在线；检查 19802 互通 |
 | 磁盘满 | 调整 quota；`-max-file-age`；手动 GC |
