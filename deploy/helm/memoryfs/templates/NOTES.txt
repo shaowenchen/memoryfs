@@ -1,6 +1,7 @@
 MemoryFS installed (namespace {{ .Release.Namespace }}).
 
-Label nodes: kubectl label node <name> memoryfs.io/node=true
+Label nodes:
+  kubectl label node <name> memoryfs.io/node=true
 
 Logs:
   kubectl -n {{ .Release.Namespace }} logs -l app.kubernetes.io/instance={{ .Release.Name }} -c node --prefix=true -f
