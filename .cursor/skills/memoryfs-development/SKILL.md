@@ -45,7 +45,7 @@ go test ./... -count=1
 
 - Mount：`-v` 详细，`-debug` FUSE 内核调试
 - chunk 读取会按 registry 尝试各副本节点；写入由目标节点负责复制
-- 容器：`nerdctl logs -f memoryfs-mount`
+- 容器：`nerdctl logs -f memoryfs-fuse`
 
 ## 不要
 

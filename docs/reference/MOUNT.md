@@ -24,7 +24,7 @@ mkdir -p /mnt/memoryfs
 
 # 3. 后台启动（不要用 -it --rm）
 nerdctl pull shaowenchen/memoryfs:latest
-nerdctl run -d --privileged --name memoryfs-mount \
+nerdctl run -d --privileged --name memoryfs-fuse \
   --device /dev/fuse \
   -v /mnt/memoryfs:/mnt/memoryfs:shared \
   --network host \
@@ -40,7 +40,7 @@ nerdctl run -d --privileged --name memoryfs-mount \
 ## 验证
 
 ```bash
-nerdctl logs -f memoryfs-mount
+nerdctl logs -f memoryfs-fuse
 df -h /mnt/memoryfs          # 只查当前路径，勿 df | grep memoryfs
 ls /mnt/memoryfs
 echo test > /mnt/memoryfs/hello.txt
@@ -49,7 +49,7 @@ echo test > /mnt/memoryfs/hello.txt
 ## 停止
 
 ```bash
-nerdctl stop memoryfs-mount && nerdctl rm memoryfs-mount
+nerdctl rm -f memoryfs-fuse
 fusermount -u /mnt/memoryfs
 ```
 

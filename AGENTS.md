@@ -66,7 +66,7 @@ brainstorming → specs/ → writing-plans → plans/ → TDD → verification �
 make verify                              # test + build（提交前）
 go test ./pkg/<pkg>/... -run Test -v     # 单包测试
 helm template deploy/helm/memoryfs         # 渲染 Chart
-nerdctl logs -f memoryfs-mount           # mount 排查
+nerdctl logs -f memoryfs-fuse           # mount 排查
 ```
 
 ## 关键文档

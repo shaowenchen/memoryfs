@@ -36,7 +36,7 @@ kubectl -n memoryfs get pods -l component=node
 ```bash
 mkdir -p /mnt/memoryfs
 
-nerdctl run -d --privileged --name memoryfs-mount \
+nerdctl run -d --privileged --name memoryfs-fuse \
   --device /dev/fuse \
   -v /mnt/memoryfs:/mnt/memoryfs:shared \
   --network host \
@@ -52,14 +52,8 @@ nerdctl run -d --privileged --name memoryfs-mount \
 ### 4. 卸载
 
 ```bash
-nerdctl stop memoryfs-mount && nerdctl rm memoryfs-mount
+nerdctl rm -f memoryfs-fuse
 fusermount -u /mnt/memoryfs
-```
-
-若目录报 `Transport endpoint is not connected`，先执行：
-
-```bash
-bash deploy/scripts/unmount-stale.sh /mnt/memoryfs
 ```
 
 ## 文档
