@@ -15,6 +15,7 @@ import (
 	"github.com/shaowenchen/memoryfs/pkg/cli"
 	"github.com/shaowenchen/memoryfs/pkg/meta"
 	"github.com/shaowenchen/memoryfs/pkg/mountlog"
+	"github.com/shaowenchen/memoryfs/pkg/storage"
 )
 
 // RemoteMeta implements meta.Backend over HTTP.
@@ -191,7 +192,16 @@ func (r *RemoteMeta) PurgeInode(context.Context, uint64) error {
 
 func (r *RemoteMeta) Close() error { return nil }
 
+func detachMetaCtx(parent context.Context) (context.Context, context.CancelFunc) {
+	return storage.DetachIOContext(parent)
+}
+
 func (r *RemoteMeta) post(ctx context.Context, path string, req fsReq, resp *fsResp, write bool) error {
+	if write {
+		var cancel context.CancelFunc
+		ctx, cancel = detachMetaCtx(ctx)
+		defer cancel()
+	}
 	nodes := r.nodeList(write)
 	if len(nodes) == 0 {
 		return fmt.Errorf("no nodes configured")

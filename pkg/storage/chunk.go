@@ -247,13 +247,15 @@ func (c *ChunkStore) DeleteChunks(ctx context.Context, attr *meta.Attr) {
 }
 
 func (c *ChunkStore) readChunk(ctx context.Context, chunkID string) ([]byte, error) {
-	nodes := c.nodesForChunk(ctx, chunkID)
+	ioCtx, cancel := DetachIOContext(ctx)
+	defer cancel()
+	nodes := c.nodesForChunk(ioCtx, chunkID)
 	if len(nodes) == 0 {
 		return nil, ErrNoNodes
 	}
 	var last error
 	for _, node := range nodes {
-		data, err := c.transport.GetChunk(ctx, node, chunkID)
+		data, err := c.transport.GetChunk(ioCtx, node, chunkID)
 		if err == nil {
 			mountlog.Debugf("chunk %s GET ok node=%s bytes=%d", chunkID, node, len(data))
 			return data, nil
@@ -265,13 +267,15 @@ func (c *ChunkStore) readChunk(ctx context.Context, chunkID string) ([]byte, err
 }
 
 func (c *ChunkStore) writeChunk(ctx context.Context, chunkID string, data []byte) error {
-	nodes := c.nodesForChunk(ctx, chunkID)
+	ioCtx, cancel := DetachIOContext(ctx)
+	defer cancel()
+	nodes := c.nodesForChunk(ioCtx, chunkID)
 	if len(nodes) == 0 {
 		return ErrNoNodes
 	}
 	var last error
 	for _, node := range nodes {
-		if err := c.transport.PutChunk(ctx, node, chunkID, data); err == nil {
+		if err := c.transport.PutChunk(ioCtx, node, chunkID, data); err == nil {
 			mountlog.Debugf("chunk %s PUT ok node=%s bytes=%d", chunkID, node, len(data))
 			return nil
 		} else {
@@ -284,13 +288,15 @@ func (c *ChunkStore) writeChunk(ctx context.Context, chunkID string, data []byte
 }
 
 func (c *ChunkStore) deleteChunk(ctx context.Context, chunkID string) error {
-	nodes := c.nodesForChunk(ctx, chunkID)
+	ioCtx, cancel := DetachIOContext(ctx)
+	defer cancel()
+	nodes := c.nodesForChunk(ioCtx, chunkID)
 	if len(nodes) == 0 {
 		return ErrNoNodes
 	}
 	var last error
 	for _, node := range nodes {
-		err := c.transport.DeleteChunk(ctx, node, chunkID)
+		err := c.transport.DeleteChunk(ioCtx, node, chunkID)
 		if err == nil {
 			return nil
 		}
