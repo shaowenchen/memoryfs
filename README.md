@@ -4,15 +4,62 @@
 
 ## 快速开始
 
+### 1. 给节点打标签
+
 ```bash
-# 1. 标记节点并安装集群
 kubectl label node <node-name> memoryfs.io/node=true
+```
+
+需打标签的节点数 ≥ Helm `replicaCount`（每节点最多 1 个 MemoryFS Pod）。
+
+### 2. 安装集群
+
+```bash
 helm upgrade --install memoryfs \
   https://github.com/shaowenchen/memoryfs/releases/download/latest/memoryfs-latest.tar.gz \
   -n memoryfs --create-namespace \
-  --set replicaCount=3 --set replicaFactor=2 --set node.storageGB=32
+  --set replicaCount=3 \
+  --set replicaFactor=2 \
+  --set node.storageGB=32
+```
 
-# 2. FUSE 挂载 — 见 docs/reference/MOUNT.md
+确认 Pod 就绪：
+
+```bash
+kubectl -n memoryfs get pods -l component=node
+```
+
+### 3. 挂载
+
+宿主机需有 `/dev/fuse`。挂载容器**必须保持运行**（默认目录 `/mnt/memoryfs`）：
+
+```bash
+mkdir -p /mnt/memoryfs
+
+nerdctl run -d --privileged --name memoryfs-mount \
+  --device /dev/fuse \
+  -v /mnt/memoryfs:/mnt/memoryfs:shared \
+  --network host \
+  --restart unless-stopped \
+  shaowenchen/memoryfs:latest \
+  mount -mount /mnt/memoryfs \
+  -nodes http://<host>:19800 \
+  -v -f
+```
+
+`-nodes` 填任一节点 HTTP 地址（可逗号分隔多个）。详见 [docs/reference/MOUNT.md](docs/reference/MOUNT.md)。
+
+### 4. 卸载
+
+```bash
+nerdctl stop memoryfs-mount && nerdctl rm memoryfs-mount
+fusermount -u /mnt/memoryfs
+```
+
+若目录报 `Transport endpoint is not connected`，先执行：
+
+```bash
+bash deploy/scripts/unmount-stale.sh /mnt/memoryfs
 ```
 
 ## 文档
