@@ -36,7 +36,7 @@ nerdctl run -d --privileged --name memoryfs-fuse \
   -v -f
 ```
 
-`df -h` 的总容量与已用量由 mount 客户端自动从集群 `/v1/cluster/overview`（各节点 `disk_quota_bytes` / 用量）汇总，无需额外参数。可逗号分隔多个 `-nodes`。
+`df -h` 的总容量与已用量为**集群汇总**（各 Ready 节点 `disk_quota_bytes` / 用量之和）。3 节点 × 32GB 配置时约显示 **96G**。可逗号分隔多个 `-nodes`。
 
 ## 验证
 

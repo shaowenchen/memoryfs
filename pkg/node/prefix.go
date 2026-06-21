@@ -45,7 +45,7 @@ func PrefixMiddleware(prefix string, next http.Handler) http.Handler {
 
 func probePath(path string) bool {
 	switch path {
-	case "/health", "/metrics", "/readyz", "/livez":
+	case "/health", "/metrics", "/readyz", "/livez", "/v1/stats":
 		return true
 	default:
 		return false

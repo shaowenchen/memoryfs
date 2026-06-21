@@ -145,11 +145,14 @@
 
     function renderSummary(ov) {
       const el = document.getElementById('summary');
+      const storage = ov.storage || {};
       const cards = [
         ['Leader', (ov.leader || '-').replace(/^https?:\/\//, '')],
         ['Epoch', ov.cluster_epoch ?? '-'],
         ['RF', ov.replica_factor ?? '-'],
-        ['节点', (ov.nodes||[]).length],
+        ['节点', `${storage.reachable_nodes ?? 0}/${storage.total_nodes ?? (ov.nodes||[]).length}`],
+        ['集群配额', fmtBytes(storage.total_disk_quota_bytes || 0)],
+        ['集群已用', fmtBytes((storage.total_disk_bytes || 0) + (storage.total_mem_cache_bytes || 0))],
         ['修复', ov.repair?.pending ?? 0],
       ];
       el.innerHTML = cards.map(([l,v]) =>

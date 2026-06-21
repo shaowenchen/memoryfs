@@ -22,6 +22,15 @@ type NodeOverview struct {
 	Error           string `json:"error,omitempty"`
 }
 
+// ClusterStorage summarizes capacity and usage across reachable nodes.
+type ClusterStorage struct {
+	TotalDiskQuotaBytes int64 `json:"total_disk_quota_bytes"`
+	TotalDiskBytes      int64 `json:"total_disk_bytes"`
+	TotalMemCacheBytes  int64 `json:"total_mem_cache_bytes"`
+	ReachableNodes      int   `json:"reachable_nodes"`
+	TotalNodes          int   `json:"total_nodes"`
+}
+
 // ClusterOverview aggregates cluster-wide status for the dashboard.
 type ClusterOverview struct {
 	NodeID        string         `json:"node_id"`
@@ -29,6 +38,7 @@ type ClusterOverview struct {
 	ClusterEpoch  uint64         `json:"cluster_epoch"`
 	ReplicaFactor int            `json:"replica_factor"`
 	Repair        RepairInfo     `json:"repair"`
+	Storage       ClusterStorage `json:"storage"`
 	Nodes         []NodeOverview `json:"nodes"`
 	GeneratedAt   time.Time      `json:"generated_at"`
 }
@@ -68,7 +78,23 @@ func (s *Service) ClusterOverview(ctx context.Context) ClusterOverview {
 		seen[url] = struct{}{}
 		ov.Nodes = append(ov.Nodes, s.fetchNodeOverview(url))
 	}
+	ov.Storage = summarizeClusterStorage(ov.Nodes)
 	return ov
+}
+
+func summarizeClusterStorage(nodes []NodeOverview) ClusterStorage {
+	var out ClusterStorage
+	out.TotalNodes = len(nodes)
+	for _, n := range nodes {
+		if !n.Reachable {
+			continue
+		}
+		out.ReachableNodes++
+		out.TotalDiskBytes += n.Stats.DiskBytes
+		out.TotalMemCacheBytes += n.Stats.MemCacheBytes
+		out.TotalDiskQuotaBytes += n.Stats.DiskQuotaBytes
+	}
+	return out
 }
 
 func (s *Service) fetchNodeOverview(base string) NodeOverview {

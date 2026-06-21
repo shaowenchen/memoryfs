@@ -45,7 +45,7 @@ func TestPrefixMiddleware(t *testing.T) {
 	req = httptest.NewRequest(http.MethodGet, "/v1/stats", nil)
 	rec = httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
-	if rec.Code != http.StatusNotFound {
-		t.Fatalf("unprefixed api without prefix: code=%d", rec.Code)
+	if rec.Code != http.StatusOK || seen != "/v1/stats" {
+		t.Fatalf("stats probe route: code=%d path=%q", rec.Code, seen)
 	}
 }

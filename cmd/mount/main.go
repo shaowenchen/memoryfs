@@ -92,17 +92,23 @@ func main() {
 		if err != nil {
 			return 0
 		}
-		return service.SumDiskQuotaBytes(*ov, chunks.Nodes())
+		if ov.Storage.TotalDiskQuotaBytes > 0 {
+			return uint64(ov.Storage.TotalDiskQuotaBytes)
+		}
+		return service.SumDiskQuotaBytes(*ov, nil)
 	}
 	usedFn := func(ctx context.Context) uint64 {
 		ov, err := apiClient.Overview(ctx)
 		if err != nil {
 			return 0
 		}
-		return service.SumDiskUsageBytes(*ov, chunks.Nodes())
+		if ov.Storage.TotalDiskBytes > 0 || ov.Storage.TotalMemCacheBytes > 0 {
+			return uint64(ov.Storage.TotalDiskBytes + ov.Storage.TotalMemCacheBytes)
+		}
+		return service.SumDiskUsageBytes(*ov, nil)
 	}
 	if cap := capacityFn(context.Background()); cap > 0 {
-		log.Printf("df capacity: %d bytes (from cluster disk_quota_bytes)", cap)
+		log.Printf("df capacity: %d bytes (cluster total disk_quota_bytes)", cap)
 	} else {
 		log.Printf("df capacity: unlimited (nodes report no disk quota)")
 	}

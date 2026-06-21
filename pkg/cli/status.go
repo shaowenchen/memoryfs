@@ -48,8 +48,16 @@ func printStatusText(w io.Writer, seed, prefix string, ov *service.ClusterOvervi
 		_, _ = fmt.Fprintf(w, "Prefix: %s\n", prefix)
 	}
 	_, _ = fmt.Fprintf(w, "Leader: %s\n", valueOr(ov.Leader, "-"))
-	_, _ = fmt.Fprintf(w, "Epoch:  %d   RF: %d   Repair pending: %d   Local node: %s\n\n",
+	_, _ = fmt.Fprintf(w, "Epoch:  %d   RF: %d   Repair pending: %d   Local node: %s\n",
 		ov.ClusterEpoch, ov.ReplicaFactor, ov.Repair.Pending, valueOr(ov.NodeID, "-"))
+	_, _ = fmt.Fprintf(w, "Cluster: %d/%d nodes reachable   quota %s   used %s (disk %s + mem %s)\n\n",
+		ov.Storage.ReachableNodes,
+		ov.Storage.TotalNodes,
+		FormatBytes(ov.Storage.TotalDiskQuotaBytes),
+		FormatBytes(ov.Storage.TotalDiskBytes+ov.Storage.TotalMemCacheBytes),
+		FormatBytes(ov.Storage.TotalDiskBytes),
+		FormatBytes(ov.Storage.TotalMemCacheBytes),
+	)
 
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
 	_, _ = fmt.Fprintln(tw, "NODE\tROLE\tSTATE\tCHUNKS\tDISK\tMEM CACHE\tEPOCH\tREACH")
