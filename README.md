@@ -54,7 +54,11 @@ nerdctl run -d --privileged --name memoryfs-fuse \
 ```bash
 nerdctl rm -f memoryfs-fuse
 fusermount -u /mnt/memoryfs
+
+helm uninstall memoryfs -n memoryfs
 ```
+
+节点 hostPath 上的数据目录（默认 `/data/memoryfs`）不会随 Helm 删除，需自行清理。
 
 ## 文档
 
