@@ -317,16 +317,20 @@ func parseQueryInt64(raw string) (int64, error) {
 }
 
 func (s *Server) getattr(ctx context.Context, req fsRequest) (fsResponse, int) {
+	log.Printf("node getattr req: ino=%d", req.Ino)
 	attr, err := s.svc.GetAttr(ctx, req.Ino)
 	if err != nil {
+		log.Printf("node getattr failed: ino=%d err=%v", req.Ino, err)
 		return fsResponse{Error: meta.MapError(err)}, http.StatusNotFound
 	}
 	return fsResponse{Attr: attr}, http.StatusOK
 }
 
 func (s *Server) lookup(ctx context.Context, req fsRequest) (fsResponse, int) {
+	log.Printf("node lookup req: parentIno=%d name=%s", req.ParentIno, req.Name)
 	attr, err := s.svc.Lookup(ctx, req.ParentIno, req.Name)
 	if err != nil {
+		log.Printf("node lookup failed: parentIno=%d name=%s err=%v", req.ParentIno, req.Name, err)
 		return fsResponse{Error: meta.MapError(err)}, http.StatusNotFound
 	}
 	return fsResponse{Attr: attr}, http.StatusOK
@@ -349,10 +353,13 @@ func (s *Server) mkdir(ctx context.Context, req fsRequest) (fsResponse, int) {
 }
 
 func (s *Server) create(ctx context.Context, req fsRequest) (fsResponse, int) {
+	log.Printf("node create req: parentIno=%d name=%s mode=%d", req.ParentIno, req.Name, req.Mode)
 	attr, err := s.svc.Create(ctx, req.ParentIno, req.Name, req.Mode, req.UID, req.GID)
 	if err != nil {
+		log.Printf("node create failed: %v", err)
 		return fsResponse{Error: meta.MapError(err)}, http.StatusConflict
 	}
+	log.Printf("node create success: newIno=%d", attr.Ino)
 	return fsResponse{Attr: attr}, http.StatusOK
 }
 

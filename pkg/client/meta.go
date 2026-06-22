@@ -292,6 +292,7 @@ func (r *RemoteMeta) doPost(ctx context.Context, url string, req fsReq, resp *fs
 	if err != nil {
 		return err
 	}
+	mountlog.Infof("meta doPost req: %s %s", url, string(body))
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		return err
@@ -299,6 +300,7 @@ func (r *RemoteMeta) doPost(ctx context.Context, url string, req fsReq, resp *fs
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpResp, err := r.client.Do(httpReq)
 	if err != nil {
+		mountlog.Errorf("meta doPost http err: %s %v", url, err)
 		return err
 	}
 	defer func() { _ = httpResp.Body.Close() }()
@@ -306,6 +308,7 @@ func (r *RemoteMeta) doPost(ctx context.Context, url string, req fsReq, resp *fs
 	if err != nil {
 		return err
 	}
+	mountlog.Infof("meta doPost resp: %s status=%d body=%s", url, httpResp.StatusCode, string(raw))
 	if err := json.Unmarshal(raw, resp); err != nil {
 		return fmt.Errorf("%s: %s", url, string(raw))
 	}

@@ -122,10 +122,13 @@ func (m *MemoryFS) Mkdir(ctx context.Context, name string, mode uint32, out *fus
 }
 
 func (m *MemoryFS) Create(ctx context.Context, name string, flags uint32, mode uint32, out *fuse.EntryOut) (node *fs.Inode, fh fs.FileHandle, fuseFlags uint32, errno syscall.Errno) {
+	mountlog.Infof("MemoryFS Create start: name=%s flags=0x%x mode=0%o", name, flags, mode)
 	attr, err := m.store.Create(ctx, m.rootIno(), name, mode, m.uid, m.gid)
 	if err != nil {
+		mountlog.Errorf("MemoryFS Create failed: name=%s err=%v", name, err)
 		return nil, nil, 0, mapMetaErr(err)
 	}
+	mountlog.Infof("MemoryFS Create success: name=%s newIno=%d", name, attr.Ino)
 	inode, errno := m.newChild(ctx, attr, out)
 	return inode, nil, fuse.FOPEN_KEEP_CACHE, errno
 }
@@ -255,10 +258,13 @@ func (d *Dir) Mkdir(ctx context.Context, name string, mode uint32, out *fuse.Ent
 }
 
 func (d *Dir) Create(ctx context.Context, name string, flags uint32, mode uint32, out *fuse.EntryOut) (node *fs.Inode, fh fs.FileHandle, fuseFlags uint32, errno syscall.Errno) {
+	mountlog.Infof("Dir Create start: parentIno=%d name=%s flags=0x%x mode=0%o", d.ino, name, flags, mode)
 	attr, err := d.store.Create(ctx, d.ino, name, mode, d.uid, d.gid)
 	if err != nil {
+		mountlog.Errorf("Dir Create failed: parentIno=%d name=%s err=%v", d.ino, name, err)
 		return nil, nil, 0, mapMetaErr(err)
 	}
+	mountlog.Infof("Dir Create success: parentIno=%d name=%s newIno=%d", d.ino, name, attr.Ino)
 	inode, errno := d.newChild(ctx, attr, out)
 	return inode, nil, fuse.FOPEN_KEEP_CACHE, errno
 }
@@ -335,7 +341,7 @@ func (f *File) Getattr(ctx context.Context, fh fs.FileHandle, out *fuse.AttrOut)
 }
 
 func (f *File) Open(ctx context.Context, flags uint32) (fs.FileHandle, uint32, syscall.Errno) {
-	mountlog.Debugf("fuse open ino=%d flags=0%o", f.ino, flags)
+	mountlog.Infof("fuse open ino=%d flags=0x%x", f.ino, flags)
 	return nil, fuse.FOPEN_KEEP_CACHE, 0
 }
 
