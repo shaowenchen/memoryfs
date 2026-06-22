@@ -9,7 +9,7 @@ func TestPreallocMemoryReservesQuota(t *testing.T) {
 		t.Fatal(err)
 	}
 	if p.ReservedBytes() != quota {
-		t.Fatalf("reserved: got %d want %d", p.ReservedBytes(), quota)
+		t.Fatalf("quota: got %d want %d", p.ReservedBytes(), quota)
 	}
 	if err := p.Put("1_0_0", []byte("x")); err != nil {
 		t.Fatal(err)

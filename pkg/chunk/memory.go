@@ -29,6 +29,13 @@ func (s *MemoryStore) Get(id string) ([]byte, bool) {
 	return out, true
 }
 
+func (s *MemoryStore) chunkRef(id string) ([]byte, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	data, ok := s.chunks[id]
+	return data, ok
+}
+
 func (s *MemoryStore) Put(id string, data []byte) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -89,7 +96,7 @@ func (q *QuotaMemory) Put(id string, data []byte) error {
 	if q.quotaBytes > 0 {
 		used := q.UsageBytes()
 		oldSize := int64(0)
-		if old, ok := q.Get(id); ok {
+		if old, ok := q.chunkRef(id); ok {
 			oldSize = int64(len(old))
 		}
 		if used-oldSize+int64(len(data)) > q.quotaBytes {
@@ -97,6 +104,10 @@ func (q *QuotaMemory) Put(id string, data []byte) error {
 		}
 	}
 	return q.MemoryStore.Put(id, data)
+}
+
+func (q *QuotaMemory) chunkRef(id string) ([]byte, bool) {
+	return q.MemoryStore.chunkRef(id)
 }
 
 // Deprecated: use NewMemoryStore.

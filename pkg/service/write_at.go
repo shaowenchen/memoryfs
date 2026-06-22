@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/shaowenchen/memoryfs/pkg/chunk"
 	"github.com/shaowenchen/memoryfs/pkg/meta"
 )
 
@@ -36,12 +37,12 @@ func (s *Service) WriteAt(ctx context.Context, ino uint64, offset int64, data []
 		blockID := meta.BlockID(ino, chunkIdx, blockIdx)
 
 		buf := make([]byte, meta.BlockSize)
-		if existing, ok := s.cfg.Chunks.Get(blockID); ok {
+		if existing, ok := chunk.LocalRef(s.cfg.Chunks, blockID); ok {
 			copy(buf, existing)
 		}
 		n := copy(buf[blockOff:], data[pos:])
 		valid := blockOff + n
-		if existing, ok := s.cfg.Chunks.Get(blockID); ok && len(existing) > valid {
+		if existing, ok := chunk.LocalRef(s.cfg.Chunks, blockID); ok && len(existing) > valid {
 			valid = len(existing)
 		}
 		replicatePeers := valid >= meta.BlockSize

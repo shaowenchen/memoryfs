@@ -214,11 +214,13 @@ func (s *Service) putChunk(ctx context.Context, chunkID string, data []byte, rep
 		}
 	}
 
-	if err := s.RecordChunkRegistry(ctx, chunkID, replicas); err != nil {
-		return replicas, fmt.Errorf("registry: %w", err)
-	}
-	if replicatePeers && replicated < s.cfg.ReplicaFactor {
-		s.enqueueRepair(chunkID, replicas)
+	if replicatePeers {
+		if err := s.RecordChunkRegistry(ctx, chunkID, replicas); err != nil {
+			return replicas, fmt.Errorf("registry: %w", err)
+		}
+		if replicated < s.cfg.ReplicaFactor {
+			s.enqueueRepair(chunkID, replicas)
+		}
 	}
 	return replicas, nil
 }

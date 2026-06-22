@@ -84,8 +84,17 @@ func TestWriteBlockLeaderStoresAndUpdatesAttr(t *testing.T) {
 	if data, ok := chunks.Get(meta.BlockID(attr.Ino, 0, 0)); !ok || string(data) != "block-data" {
 		t.Fatalf("chunk stored: %q ok=%v", data, ok)
 	}
+
+	full := make([]byte, meta.BlockSize)
+	got, err = svc.WriteBlock(context.Background(), attr.Ino, 0, 0, full, uint64(len(full)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Size != uint64(len(full)) {
+		t.Fatalf("full block size: got %d", got.Size)
+	}
 	loc, err := svc.GetChunkRegistry(context.Background(), meta.BlockID(attr.Ino, 0, 0))
 	if err != nil || len(loc.Replicas) == 0 {
-		t.Fatalf("registry: loc=%v err=%v", loc, err)
+		t.Fatalf("registry after full block: loc=%v err=%v", loc, err)
 	}
 }

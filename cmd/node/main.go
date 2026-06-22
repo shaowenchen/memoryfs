@@ -106,7 +106,7 @@ func main() {
 	}
 	log.Printf("chunk storage: backend=%s dir=%s local_chunks=%d", *chunkBackend, chunkPath, chunkStore.Count())
 	if pm, ok := chunkStore.(*chunk.PreallocMemory); ok {
-		log.Printf("chunk storage: preallocated %d bytes at pod start (storageGB quota)", pm.ReservedBytes())
+		log.Printf("chunk storage: memory quota %d bytes (storageGB)", pm.ReservedBytes())
 	}
 
 	httpTP := transport.NewHTTPTransport()
