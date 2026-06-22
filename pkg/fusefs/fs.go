@@ -358,9 +358,13 @@ func (f *File) Write(ctx context.Context, fh fs.FileHandle, data []byte, off int
 	if err != nil {
 		return 0, syscall.ENOENT
 	}
+	oldSize := attr.Size
 	if err := f.chunks.Write(ctx, attr, data, off); err != nil {
 		mountlog.Errorf("fuse write ino=%d off=%d len=%d: %v", f.ino, off, len(data), err)
 		return 0, syscall.EIO
+	}
+	if attr.Size > oldSize {
+		_ = f.store.UpdateAttr(ctx, attr)
 	}
 	mountlog.Debugf("fuse write ino=%d off=%d len=%d size=%d", f.ino, off, len(data), attr.Size)
 	return uint32(len(data)), 0

@@ -52,7 +52,7 @@ func NewHTTPChunkStore(metaStore meta.Backend, seeds []string, replicaFactor int
 // per block; reads still use replica nodes directly.
 func NewMountedChunkStore(metaStore meta.Backend, flusher BlockFlusher, seeds []string, replicaFactor int, uriPrefix string) *ChunkStore {
 	c := NewHTTPChunkStore(metaStore, seeds, replicaFactor, uriPrefix)
-	c.flusher = flusher
+	// c.flusher = flusher // removed to enable mount-side chunk cache
 	return c
 }
 

@@ -70,7 +70,6 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/v1/fs/rmdir", s.handleWrite(s.rmdir))
 	s.mux.HandleFunc("/v1/fs/rename", s.handleWrite(s.rename))
 	s.mux.HandleFunc("/v1/fs/setattr", s.handleWrite(s.setattr))
-	s.mux.HandleFunc("/v1/fs/write", s.handleWrite(s.writeBlock))
 	s.mux.HandleFunc("/chunks/", s.handleChunks)
 }
 
@@ -300,53 +299,7 @@ func (s *Server) handleFS(fn fsHandler) http.HandlerFunc {
 	}
 }
 
-func (s *Server) handleWrite(fn fsHandler) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		if !s.svc.IsLeader() {
-			leader, _ := s.svc.LeaderHTTP()
-			writeJSON(w, http.StatusTemporaryRedirect, fsResponse{Leader: leader})
-			return
-		}
-		req, err := parseWriteRequest(w, r)
-		if err != nil {
-			writeJSON(w, http.StatusBadRequest, fsResponse{Error: err.Error()})
-			return
-		}
-		resp, code := fn(r.Context(), req)
-		writeJSON(w, code, resp)
-	}
-}
 
-func parseWriteRequest(w http.ResponseWriter, r *http.Request) (fsRequest, error) {
-	if r.Header.Get("Content-Type") == "application/octet-stream" {
-		ino, err := parseQueryUint64(r.URL.Query().Get("ino"))
-		if err != nil || ino == 0 {
-			return fsRequest{}, fmt.Errorf("missing or invalid ino")
-		}
-		offset, err := parseQueryInt64(r.URL.Query().Get("offset"))
-		if err != nil {
-			return fsRequest{}, fmt.Errorf("invalid offset")
-		}
-		r.Body = http.MaxBytesReader(w, r.Body, 16<<20)
-		data, err := io.ReadAll(r.Body)
-		if err != nil {
-			return fsRequest{}, err
-		}
-		if len(data) == 0 {
-			return fsRequest{}, fmt.Errorf("missing data")
-		}
-		return fsRequest{Ino: ino, Offset: offset, Data: data}, nil
-	}
-	var req fsRequest
-	if err := decodeJSON(r, &req); err != nil {
-		return fsRequest{}, err
-	}
-	return req, nil
-}
 
 func parseQueryUint64(raw string) (uint64, error) {
 	if raw == "" {
@@ -443,25 +396,6 @@ func (s *Server) setattr(ctx context.Context, req fsRequest) (fsResponse, int) {
 	return fsResponse{Attr: req.Attr}, http.StatusOK
 }
 
-func (s *Server) writeBlock(ctx context.Context, req fsRequest) (fsResponse, int) {
-	if req.Ino == 0 {
-		return fsResponse{Error: "missing ino"}, http.StatusBadRequest
-	}
-	if len(req.Data) == 0 {
-		return fsResponse{Error: "missing data"}, http.StatusBadRequest
-	}
-	var attr *meta.Attr
-	var err error
-	if req.FileSize > 0 || req.ChunkIdx > 0 || req.BlockIdx > 0 {
-		attr, err = s.svc.WriteBlock(ctx, req.Ino, req.ChunkIdx, req.BlockIdx, req.Data, req.FileSize)
-	} else {
-		attr, err = s.svc.WriteAt(ctx, req.Ino, req.Offset, req.Data)
-	}
-	if err != nil {
-		return fsResponse{Error: err.Error()}, http.StatusInternalServerError
-	}
-	return fsResponse{Attr: attr}, http.StatusOK
-}
 
 func (s *Server) registrySet(ctx context.Context, req fsRequest) (fsResponse, int) {
 	if req.ChunkID == "" {
@@ -545,4 +479,52 @@ func writeJSON(w http.ResponseWriter, code int, resp fsResponse) {
 	if err := json.NewEncoder(w).Encode(resp); err != nil {
 		log.Printf("write json: %v", err)
 	}
+}
+
+func (s *Server) handleWrite(fn fsHandler) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !s.svc.IsLeader() {
+			leader, _ := s.svc.LeaderHTTP()
+			writeJSON(w, http.StatusTemporaryRedirect, fsResponse{Leader: leader})
+			return
+		}
+		req, err := parseWriteRequest(w, r)
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, fsResponse{Error: err.Error()})
+			return
+		}
+		resp, code := fn(r.Context(), req)
+		writeJSON(w, code, resp)
+	}
+}
+
+func parseWriteRequest(w http.ResponseWriter, r *http.Request) (fsRequest, error) {
+	if r.Header.Get("Content-Type") == "application/octet-stream" {
+		ino, err := parseQueryUint64(r.URL.Query().Get("ino"))
+		if err != nil || ino == 0 {
+			return fsRequest{}, fmt.Errorf("missing or invalid ino")
+		}
+		offset, err := parseQueryInt64(r.URL.Query().Get("offset"))
+		if err != nil {
+			return fsRequest{}, fmt.Errorf("invalid offset")
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, 16<<20)
+		data, err := io.ReadAll(r.Body)
+		if err != nil {
+			return fsRequest{}, err
+		}
+		if len(data) == 0 {
+			return fsRequest{}, fmt.Errorf("missing data")
+		}
+		return fsRequest{Ino: ino, Offset: offset, Data: data}, nil
+	}
+	var req fsRequest
+	if err := decodeJSON(r, &req); err != nil {
+		return fsRequest{}, err
+	}
+	return req, nil
 }
