@@ -28,23 +28,31 @@ helm upgrade --install memoryfs \
 ```bash
 mkdir -p /mnt/memoryfs
 
-nerdctl run -d --privileged --name memoryfs-fuse \
-  --device /dev/fuse \
-  -v /mnt/memoryfs:/mnt/memoryfs:shared \
+export IMAGE=shaowenchen/memoryfs:latest
+export MEMORYFS_NODES=http://<host>:19800
+
+nerdctl run --name memoryfs-fuse \
+  --privileged \
+  -d --restart always \
   --network host \
-  --restart unless-stopped \
-  shaowenchen/memoryfs:latest \
+  --device /dev/fuse \
+  --mount type=bind,source=/mnt/memoryfs,target=/mnt/memoryfs,bind-propagation=shared \
+  "${IMAGE}" \
   mount -mount /mnt/memoryfs \
-  -nodes http://<host>:19800 \
+  -nodes "${MEMORYFS_NODES}" \
   -v -f
+```
+
+验证挂载：
+
+```bash
+df -h /mnt/memoryfs
 ```
 
 写入 1GB 测试：
 
 ```bash
 time dd if=/dev/zero of=/mnt/memoryfs/test.img bs=1M count=1024 oflag=direct status=progress
-sync
-ls -lh /mnt/memoryfs/test.img
 ```
 
 ### 4. 卸载
@@ -53,7 +61,7 @@ ls -lh /mnt/memoryfs/test.img
 
 ```bash
 nerdctl rm -f memoryfs-fuse
-fusermount -u /mnt/memoryfs
+umount /mnt/memoryfs
 ```
 
 卸载集群：

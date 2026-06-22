@@ -61,34 +61,88 @@ StatefulSet 有序启动时的成员模型：
 | 层级 | 大小 | 作用 |
 |------|------|------|
 | **Chunk**（逻辑块） | 64 MiB | 按文件偏移定位，元数据 `attr.Chunks` 索引 |
-| **Block**（物理块） | 4 MiB | 节点间副本同步的最小单位 |
+| **Block**（物理块） | 4 MiB | 节点间副本同步的最小单位（chain 转发单元） |
 
 ```
 文件 offset
-  └─► Chunk (64 MiB) ──► Block ×16 (各 4 MiB) ──► RF 副本 PUT 到各节点
+  └─► Chunk (64 MiB) ──► Block ×16 (各 4 MiB) ──► Chain Replication
 ```
 
-- 挂载客户端 **写缓冲**：小写入先缓存在内存，满 4 MiB 自动 flush，或 `fsync`/关闭文件时 flush 尾部块
-- 避免 2 字节写入触发跨节点 HTTP PUT（此前每写即同步）
-- 旧格式 chunk id `{ino}_{slice}` 仍可读（向后兼容）
+挂载客户端 **写缓冲**：小写入先缓存在内存，满 4 MiB 自动 flush，或 `fsync`/关闭文件时 flush 尾部块。
 
 | 后端 | 说明 |
 |------|------|
+| `memory` | 纯内存（默认，`storageGB` quota） |
 | `disk` | 写入即落盘 |
-| `tiered` | 落盘 + 内存读缓存（默认 512MB） |
+| `tiered` | 落盘 + 内存读缓存 |
 | `buffered` | 先写内存，定时 flush 落盘 |
-| `memory` | 纯内存，重启丢失 |
 
-- 默认 **RF=2**，副本位置记录在 `memoryfs:chunkloc:{id}`
-- `-flush-interval` 定时 fsync；`drain`/shutdown 前再次落盘
-- 节点重启从本地磁盘恢复，缺失时从 peer **rebuild**
+### Chain Replication
+
+副本同步采用 **Chain Replication**：写入只需要 HEAD 落盘即返回，HEAD 异步沿链向下传播到 TAIL。
 
 ```
-写 chunk "2_0" (RF=3)
-  ├─► Node1: /data/chunks/2/2_0
-  ├─► Node2: /data/chunks/2/2_0
-  └─► Node3: /data/chunks/2/2_0
+ChainTable
+  └── Chain (× N=节点数)
+        └── Target (× RF)        Role: HEAD / MIDDLE / TAIL
+              └── NodeURL
 ```
+
+- **Target** — 一个数据副本，绑定一个节点，有 Role
+- **Chain** — 有序 Target 列表，HEAD→MIDDLE→…→TAIL；同一 Chain 的 Target 必须在不同节点
+- **ChainTable** — 集群可用的全部 Chain；不在 Table 内的 Chain 不参与存储
+- **Role**
+  - **HEAD**：最新数据入口，所有写从这里进入
+  - **MIDDLE**：从 HEAD 同步、再向 TAIL 传播
+  - **TAIL**：链尾，承载已提交数据，强一致读首选
+
+#### Chain 派生
+
+`ChainTable` 由排序后的节点列表确定性派生（无需持久化）。3 节点 + RF=2：
+
+| Chain | HEAD | TAIL |
+|-------|------|------|
+| 0     | n0   | n1   |
+| 1     | n1   | n2   |
+| 2     | n2   | n0   |
+
+每个节点恰好担任 1 条 chain 的 HEAD，写入负载完全均匀。chunk → chain 映射：
+
+```
+chainID = fnv1a(chunkID) % len(ChainTable.Chains)
+```
+
+#### 写路径
+
+```
+mount ──PUT /chunks/{id}──► HEAD
+                              │
+                              ├─ 1) Chunks.Put(id, data)        本地落盘
+                              ├─ 2) 立即返回 201                ← 写请求结束
+                              └─ 3) goroutine ──replica=1──► MIDDLE ──replica=1──► TAIL
+```
+
+- HEAD 本地写完**立即返回**，不等下游确认
+- 沿链转发：HEAD→MIDDLE→TAIL，每跳带 `replica=1` 标记
+- 转发失败 → 入 `RepairQueue` 后台重试
+- HEAD 不可达 → mount 顺序 fallback 到 Chain 下一个 Target，该 Target 成为新入口
+
+#### 读路径
+
+```
+mount ──GET /chunks/{id}──► 优先 TAIL（已提交）
+                              fallback → MIDDLE → HEAD
+```
+
+TAIL 收到 chunk 等价于全链已提交。优先读 TAIL 提供强一致。
+
+#### 副本因子与配置
+
+- 默认 **RF=2**；通过 `-replica-factor` 或 Helm `replicaFactor` 调整
+- ChainTable 节点变化时实时重建，过渡期由 `Rebuild` / `RepairQueue` 兜底
+- 节点重启从 peer 拉取本链应有的 chunk
+
+详细设计：[chain replication spec](../superpowers/specs/2026-06-23-chain-replication-design.md)。
 
 ## 节点生命周期
 
@@ -111,17 +165,19 @@ K8s 滚动更新：StatefulSet + preStop drain + postStart ready + PDB。详见 
 
 ```
 dd / app
-  → FUSE mount（无客户端 chunk 缓存，每次 write 直发 Leader）
-  → POST /v1/fs/write {ino, offset, data}
-  → Raft Leader
-       ├─ 合并进 4 MiB block，写入本地 prealloc chunk 池
-       ├─ 复制到 RF 个 peer 节点
-       └─ Raft 提交 inode 元数据 + chunk registry
+  → FUSE mount
+      ├─ FUSE Write 累积进 4 MiB block 缓冲
+      ├─ block 写满或 fsync/close → PUT /chunks/{id}
+      └─ 元数据更新 attr.Size / attr.Chunks（fsync/close 时一次 commit）
+  → Chain HEAD（按 chunkID hash 到 chain）
+      ├─ 本地落盘
+      ├─ 立即 201 OK ← 写返回
+      └─ 异步 chain 转发 → MIDDLE → TAIL
 ```
 
-**Node 启动**：按 Helm `node.storageGB` **预分配** chunk 内存池（Pod 起来即占用 quota 大小 RSS）。
+**Node 启动**：分配 chunk 内存配额（`storageGB`），实际 RSS 随数据量增长（按 chunk 大小 exact-size 分配）。
 
-读路径仍可从副本节点直接 GET chunk（按 registry 定位）。
+读路径优先从 chain TAIL GET chunk；失败时按 MIDDLE → HEAD fallback。
 
 ### 网络（hostNetwork）
 
@@ -135,7 +191,7 @@ dd / app
 
 Helm 参数 `node.storageGB` 表示每节点 chunk 存储上限（GB）。Chart 自动设置 Pod 内存 **request/limit = storageGB + 1Gi**（额外 1Gi 预留给进程、Raft 与运行时开销）。
 
-- **`diskSync` 关闭**（默认）：chunk 存 **预分配内存池**（`storageGB` 在 Pod 启动时一次性 reserve）；实际 chunk 用量见 `mem_cache_bytes`。
+- **`diskSync` 关闭**（默认）：chunk 存内存（按数据大小 exact-size 分配，配额上限 `storageGB`）；实际用量见 `mem_cache_bytes`。
 - **`diskSync` 开启**：chunk 落盘，磁盘配额同样为 `storageGB`。
 
 ## 集群 Epoch

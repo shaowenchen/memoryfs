@@ -325,27 +325,35 @@ func (c *ChunkStore) readChunk(ctx context.Context, chunkID string) ([]byte, err
 	return nil, last
 }
 
+// writeChunk sends data to the chain HEAD. The HEAD stores locally then async
+// forwards to MIDDLE/TAIL, so the write returns after one replica is durable.
+// If HEAD is unreachable, fall back to the next chain target (it will become
+// the new entry node and forward to remaining targets).
 func (c *ChunkStore) writeChunk(ctx context.Context, chunkID string, data []byte) error {
 	ioCtx, cancel := DetachIOContext(ctx)
 	defer cancel()
-	nodes := c.nodesForChunk(ioCtx, chunkID)
-	if len(nodes) == 0 {
+
+	targets := c.nodesForChunk(ioCtx, chunkID)
+	if len(targets) == 0 {
 		return ErrNoNodes
 	}
 	var last error
-	for _, node := range nodes {
+	for _, node := range targets {
 		if err := c.transport.PutChunk(ioCtx, node, chunkID, data); err == nil {
-			mountlog.Debugf("chunk %s PUT ok node=%s bytes=%d", chunkID, node, len(data))
+			mountlog.Infof("chunk %s PUT ok entry=%s bytes=%d", chunkID, node, len(data))
 			return nil
 		} else {
-			mountlog.Warnf("chunk %s PUT failed node=%s: %v", chunkID, node, err)
+			mountlog.Warnf("chunk %s PUT failed entry=%s: %v", chunkID, node, err)
 			last = err
 		}
 	}
-	mountlog.Errorf("chunk %s PUT all nodes failed: %v", chunkID, last)
+	mountlog.Errorf("chunk %s PUT all chain targets failed: %v", chunkID, last)
 	return last
 }
 
+// deleteChunk removes the chunk from ALL chain targets in parallel so a single
+// chain failure doesn't leave stale replicas in memory. Returns success if at
+// least one delete succeeded.
 func (c *ChunkStore) deleteChunk(ctx context.Context, chunkID string) error {
 	ioCtx, cancel := DetachIOContext(ctx)
 	defer cancel()
@@ -353,15 +361,32 @@ func (c *ChunkStore) deleteChunk(ctx context.Context, chunkID string) error {
 	if len(nodes) == 0 {
 		return ErrNoNodes
 	}
-	var last error
-	for _, node := range nodes {
-		err := c.transport.DeleteChunk(ioCtx, node, chunkID)
-		if err == nil {
-			return nil
-		}
-		last = err
+	type result struct {
+		node string
+		err  error
 	}
-	return last
+	results := make(chan result, len(nodes))
+	for _, node := range nodes {
+		node := node
+		go func() {
+			results <- result{node: node, err: c.transport.DeleteChunk(ioCtx, node, chunkID)}
+		}()
+	}
+	var last error
+	deleted := 0
+	for i := 0; i < len(nodes); i++ {
+		r := <-results
+		if r.err == nil {
+			deleted++
+			continue
+		}
+		mountlog.Warnf("chunk %s DELETE node=%s: %v", chunkID, r.node, r.err)
+		last = r.err
+	}
+	if deleted == 0 {
+		return last
+	}
+	return nil
 }
 
 func ensureChunk(attr *meta.Attr, idx int) {

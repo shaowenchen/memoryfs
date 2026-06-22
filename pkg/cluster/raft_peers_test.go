@@ -67,7 +67,7 @@ func TestIsKubernetesDNS(t *testing.T) {
 	if !isKubernetesDNS("memoryfs-0.headless.memoryfs.svc.cluster.local:19802") {
 		t.Fatal("expected k8s dns")
 	}
-	if isKubernetesDNS("10.48.202.57:19802") {
+	if isKubernetesDNS("10.0.0.1:19802") {
 		t.Fatal("expected ip")
 	}
 }

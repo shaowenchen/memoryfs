@@ -22,6 +22,21 @@ type registryDeleteRequest struct {
 
 var registryHTTPClient = &http.Client{Timeout: 15 * time.Second}
 
+func normalizeURIPrefix(prefix string) string {
+	prefix = strings.TrimSpace(prefix)
+	if prefix == "" || prefix == "/" {
+		return ""
+	}
+	if !strings.HasPrefix(prefix, "/") {
+		prefix = "/" + prefix
+	}
+	return strings.TrimSuffix(prefix, "/")
+}
+
+func leaderAPIURL(leader, uriPrefix, path string) string {
+	return strings.TrimRight(leader, "/") + normalizeURIPrefix(uriPrefix) + path
+}
+
 // RecordChunkRegistry stores chunk replica locations in the Raft-backed registry.
 func (s *Service) RecordChunkRegistry(ctx context.Context, chunkID string, replicas []string) error {
 	epoch := s.syncClusterEpoch()
@@ -33,7 +48,7 @@ func (s *Service) RecordChunkRegistry(ctx context.Context, chunkID string, repli
 		return err
 	}
 	body, _ := json.Marshal(registrySetRequest{ChunkID: chunkID, Replicas: replicas, Epoch: epoch})
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(leader, "/")+"/v1/chunks/registry/set", bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, leaderAPIURL(leader, s.cfg.URIPrefix, "/v1/chunks/registry/set"), bytes.NewReader(body))
 	if err != nil {
 		return err
 	}
@@ -59,7 +74,7 @@ func (s *Service) DeleteChunkRegistry(ctx context.Context, chunkID string) error
 		return err
 	}
 	body, _ := json.Marshal(registryDeleteRequest{ChunkID: chunkID})
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(leader, "/")+"/v1/chunks/registry/delete", bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, leaderAPIURL(leader, s.cfg.URIPrefix, "/v1/chunks/registry/delete"), bytes.NewReader(body))
 	if err != nil {
 		return err
 	}

@@ -33,6 +33,7 @@ func (s *Service) repairChunk(ctx context.Context, chunkID string, replicas []st
 		}
 	}
 
+	selfInReplicas := chunkContains(replicas, s.cfg.NodeHTTP)
 	replicated := 0
 	for _, node := range replicas {
 		if node == s.cfg.NodeHTTP {
@@ -48,7 +49,14 @@ func (s *Service) repairChunk(ctx context.Context, chunkID string, replicas []st
 	if replicated < s.cfg.ReplicaFactor {
 		return fmt.Errorf("under-replicated (%d/%d)", replicated, s.cfg.ReplicaFactor)
 	}
-	return s.RecordChunkRegistry(ctx, chunkID, replicas)
+	if err := s.RecordChunkRegistry(ctx, chunkID, replicas); err != nil {
+		return err
+	}
+	if !selfInReplicas {
+		log.Printf("repair %s: transit copy removed (not in replica set %v)", chunkID, replicas)
+		_ = s.cfg.Chunks.Delete(chunkID)
+	}
+	return nil
 }
 
 func (s *Service) fetchChunkFromPeers(ctx context.Context, chunkID string, replicas []string) ([]byte, error) {

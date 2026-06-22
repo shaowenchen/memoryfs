@@ -3,8 +3,8 @@ package meta
 import "fmt"
 
 // Storage layout follows a JuiceFS-style hierarchy:
-//   - Chunk (64 MiB): logical file segment used for metadata indexing
-//   - Block (4 MiB): physical unit replicated between nodes
+//   - Chunk (64 MiB): logical file segment indexed in inode metadata (Attr.Chunks)
+//   - Block (4 MiB max): physical replica unit; node stores BlockID -> exact-size buffer
 const (
 	BlockSize = 4 << 20  // 4 MiB — inter-node replica sync unit
 	ChunkSize = 64 << 20 // 64 MiB — logical chunk for offset lookup

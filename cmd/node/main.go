@@ -106,11 +106,11 @@ func main() {
 	}
 	log.Printf("chunk storage: backend=%s dir=%s local_chunks=%d", *chunkBackend, chunkPath, chunkStore.Count())
 	if pm, ok := chunkStore.(*chunk.PreallocMemory); ok {
-		log.Printf("chunk storage: memory quota %d bytes (storageGB)", pm.ReservedBytes())
+		log.Printf("chunk storage: memory quota %d bytes (exact-size allocation, RSS scales with data)", pm.ReservedBytes())
 	}
 
-	httpTP := transport.NewHTTPTransport()
-	grpcTP := transport.NewGRPCTransport()
+	httpTP := transport.NewPrefixedHTTPTransport(*uriPrefix)
+	grpcTP := transport.NewGRPCTransportWithHTTP(httpTP)
 	rdmaTP := transport.NewRDMATransport(grpcTP)
 	multiTP := transport.NewMultiTransport(rdmaTP, grpcTP, httpTP)
 
@@ -120,6 +120,7 @@ func main() {
 	svc := service.New(service.Config{
 		NodeID:        *id,
 		NodeHTTP:      httpURL,
+		URIPrefix:     *uriPrefix,
 		RaftNode:      rn,
 		Meta:          metaStore,
 		Chunks:        chunkStore,

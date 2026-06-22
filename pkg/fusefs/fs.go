@@ -3,6 +3,7 @@ package fusefs
 import (
 	"context"
 	"errors"
+	"sync"
 	"syscall"
 	"time"
 
@@ -319,6 +320,9 @@ type File struct {
 	store  meta.Backend
 	chunks *storage.ChunkStore
 	ino    uint64
+
+	mu        sync.Mutex
+	dirtyAttr *meta.Attr
 }
 
 var (
@@ -332,6 +336,13 @@ var (
 )
 
 func (f *File) Getattr(ctx context.Context, fh fs.FileHandle, out *fuse.AttrOut) syscall.Errno {
+	f.mu.Lock()
+	if f.dirtyAttr != nil {
+		fillAttr(out, f.dirtyAttr)
+		f.mu.Unlock()
+		return 0
+	}
+	f.mu.Unlock()
 	attr, err := f.store.GetAttr(ctx, f.ino)
 	if err != nil {
 		return syscall.ENOENT
@@ -359,18 +370,29 @@ func (f *File) Read(ctx context.Context, fh fs.FileHandle, dest []byte, off int6
 	return fuse.ReadResultData(dest[:n]), 0
 }
 
-func (f *File) Write(ctx context.Context, fh fs.FileHandle, data []byte, off int64) (uint32, syscall.Errno) {
-	attr, err := f.store.GetAttr(ctx, f.ino)
-	if err != nil {
-		return 0, syscall.ENOENT
+func (f *File) Write(ctx context.Context, fh fs.FileHandle, data []byte, off int64) (n uint32, errno syscall.Errno) {
+	defer func() {
+		if r := recover(); r != nil {
+			mountlog.Errorf("fuse write panic ino=%d off=%d len=%d: %v", f.ino, off, len(data), r)
+			n, errno = 0, syscall.EIO
+		}
+	}()
+	// Hold the per-file mutex across the whole write to serialize attr.Size /
+	// attr.Chunks mutation. FUSE may dispatch parallel writes when writeback
+	// cache is enabled; without serialization the cached attr races.
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.dirtyAttr == nil {
+		attr, err := f.store.GetAttr(ctx, f.ino)
+		if err != nil {
+			return 0, syscall.ENOENT
+		}
+		f.dirtyAttr = attr
 	}
-	oldSize := attr.Size
+	attr := f.dirtyAttr
 	if err := f.chunks.Write(ctx, attr, data, off); err != nil {
 		mountlog.Errorf("fuse write ino=%d off=%d len=%d: %v", f.ino, off, len(data), err)
 		return 0, syscall.EIO
-	}
-	if attr.Size > oldSize {
-		_ = f.store.UpdateAttr(ctx, attr)
 	}
 	mountlog.Debugf("fuse write ino=%d off=%d len=%d size=%d", f.ino, off, len(data), attr.Size)
 	return uint32(len(data)), 0
@@ -381,6 +403,7 @@ func (f *File) Fsync(ctx context.Context, fh fs.FileHandle, flags uint32) syscal
 		mountlog.Errorf("fuse fsync ino=%d: %v", f.ino, err)
 		return syscall.EIO
 	}
+	f.syncAttr(ctx)
 	return 0
 }
 
@@ -388,13 +411,35 @@ func (f *File) Release(ctx context.Context, fh fs.FileHandle) syscall.Errno {
 	if err := f.chunks.FlushFile(ctx, f.ino); err != nil {
 		mountlog.Warnf("fuse release flush ino=%d: %v", f.ino, err)
 	}
+	f.syncAttr(ctx)
 	return 0
 }
 
+func (f *File) syncAttr(ctx context.Context) {
+	f.mu.Lock()
+	attr := f.dirtyAttr
+	f.dirtyAttr = nil
+	f.mu.Unlock()
+	if attr != nil {
+		attr.Mtime = time.Now().Unix()
+		if err := f.store.UpdateAttr(ctx, attr); err != nil {
+			mountlog.Warnf("fuse syncAttr ino=%d: %v", f.ino, err)
+		} else {
+			mountlog.Infof("fuse syncAttr ino=%d size=%d chunks=%d", f.ino, attr.Size, len(attr.Chunks))
+		}
+	}
+}
+
 func (f *File) Setattr(ctx context.Context, fh fs.FileHandle, in *fuse.SetAttrIn, out *fuse.AttrOut) syscall.Errno {
-	attr, err := f.store.GetAttr(ctx, f.ino)
-	if err != nil {
-		return syscall.ENOENT
+	f.mu.Lock()
+	attr := f.dirtyAttr
+	f.mu.Unlock()
+	if attr == nil {
+		var err error
+		attr, err = f.store.GetAttr(ctx, f.ino)
+		if err != nil {
+			return syscall.ENOENT
+		}
 	}
 	if mode, ok := in.GetMode(); ok {
 		attr.Mode = (attr.Mode & 0o170000) | (mode & 0o7777)
@@ -408,6 +453,9 @@ func (f *File) Setattr(ctx context.Context, fh fs.FileHandle, in *fuse.SetAttrIn
 	if err := f.store.UpdateAttr(ctx, attr); err != nil {
 		return syscall.EIO
 	}
+	f.mu.Lock()
+	f.dirtyAttr = nil
+	f.mu.Unlock()
 	fillAttr(out, attr)
 	return 0
 }

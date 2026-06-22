@@ -22,6 +22,7 @@ const configRFKey = "memoryfs:config:replica_factor"
 type Config struct {
 	NodeID        string
 	NodeHTTP      string
+	URIPrefix     string
 	RaftNode      *raftnode.Node
 	Meta          meta.Backend
 	Chunks        chunk.Store
@@ -35,9 +36,14 @@ type Config struct {
 	Membership    *cluster.Membership
 }
 
+// chainPropagationConcurrency caps in-flight chain forward goroutines so a
+// burst of writes can't OOM the node with N × 4 MiB outstanding buffers.
+const chainPropagationConcurrency = 32
+
 // Service implements core MemoryFS node logic shared by HTTP and gRPC.
 type Service struct {
-	cfg Config
+	cfg          Config
+	chainSlots   chan struct{}
 }
 
 // New creates a service instance.
@@ -54,7 +60,10 @@ func New(cfg Config) *Service {
 	if cfg.Membership == nil && cfg.RaftNode != nil {
 		cfg.Membership = cluster.NewMembership(cfg.RaftNode, cfg.NodeID)
 	}
-	return &Service{cfg: cfg}
+	return &Service{
+		cfg:        cfg,
+		chainSlots: make(chan struct{}, chainPropagationConcurrency),
+	}
 }
 
 func (s *Service) Membership() *cluster.Membership { return s.cfg.Membership }
@@ -169,9 +178,27 @@ func (s *Service) GetChunkRegistry(_ context.Context, chunkID string) (*chunk.Lo
 	return s.cfg.Registry.Get(chunkID)
 }
 
-// StoreChunkLocal writes chunk to local disk/memory only (peer replication).
+// StoreChunkLocal writes chunk to local disk/memory and continues chain
+// propagation to the next target if one exists. Called on MIDDLE/TAIL when an
+// upstream node forwards data (replica=1 path).
 func (s *Service) StoreChunkLocal(chunkID string, data []byte) error {
-	return s.cfg.Chunks.Put(chunkID, data)
+	if err := s.cfg.Chunks.Put(chunkID, data); err != nil {
+		return err
+	}
+	nodes, err := s.cfg.Meta.ListNodes(context.Background())
+	if err != nil || len(nodes) == 0 {
+		return nil
+	}
+	chain, err := chunk.ChainFor(nodes, chunkID, s.cfg.ReplicaFactor)
+	if err != nil {
+		return nil
+	}
+	next, ok := chain.NextOf(s.cfg.NodeHTTP)
+	if !ok {
+		return nil
+	}
+	go s.propagateAlongChain(chunkID, data, next, chain)
+	return nil
 }
 
 // PutChunk stores a chunk locally and replicates to all peer replicas.
@@ -179,50 +206,78 @@ func (s *Service) PutChunk(ctx context.Context, chunkID string, data []byte) ([]
 	return s.putChunk(ctx, chunkID, data, true)
 }
 
-// putChunk stores locally and optionally replicates to peers (partial blocks may stay primary-only until full).
+// putChunk implements chain replication: the entry node (HEAD or any target
+// reached by fallback) stores locally then asynchronously forwards to the next
+// target in the chain. Writes return as soon as ONE replica is durable.
 func (s *Service) putChunk(ctx context.Context, chunkID string, data []byte, replicatePeers bool) ([]string, error) {
 	if !s.cfg.Lifecycle.AcceptsChunks() {
 		return nil, fmt.Errorf("node is draining")
 	}
 	nodes, err := s.cfg.Meta.ListNodes(ctx)
+	if err != nil || len(nodes) == 0 {
+		log.Printf("putChunk %s bytes=%d cluster not ready (nodes=%d err=%v), storing locally", chunkID, len(data), len(nodes), err)
+		if putErr := s.cfg.Chunks.Put(chunkID, data); putErr != nil {
+			return nil, putErr
+		}
+		s.enqueueRepair(chunkID, []string{s.cfg.NodeHTTP})
+		return []string{s.cfg.NodeHTTP}, nil
+	}
+	chain, err := chunk.ChainFor(nodes, chunkID, s.cfg.ReplicaFactor)
 	if err != nil {
 		return nil, err
 	}
-	replicas, err := chunk.SelectNodes(nodes, chunkID, s.cfg.ReplicaFactor)
-	if err != nil {
+	replicas := chain.NodeURLs()
+
+	// Always store locally (we are the chain entry node).
+	if err := s.cfg.Chunks.Put(chunkID, data); err != nil {
 		return nil, err
 	}
-
-	shouldStore := chunkContains(replicas, s.cfg.NodeHTTP)
-	replicated := 0
-	if shouldStore {
-		if err := s.cfg.Chunks.Put(chunkID, data); err != nil {
-			return nil, err
-		}
-		replicated++
-	}
-	if replicatePeers {
-		for _, node := range replicas {
-			if node == s.cfg.NodeHTTP {
-				continue
-			}
-			if err := s.cfg.Transport.PutChunkReplica(ctx, node, chunkID, data); err != nil {
-				log.Printf("replicate %s -> %s: %v", chunkID, node, err)
-				continue
-			}
-			replicated++
-		}
-	}
+	log.Printf("putChunk %s bytes=%d chain=%d entry=%s targets=%v", chunkID, len(data), chain.ID, s.cfg.NodeHTTP, replicas)
 
 	if replicatePeers {
-		if err := s.RecordChunkRegistry(ctx, chunkID, replicas); err != nil {
-			return replicas, fmt.Errorf("registry: %w", err)
+		// Find next target in chain after us; if we are not in the chain (mount
+		// fell back to a non-target node), forward to HEAD instead.
+		var next chunk.Target
+		var ok bool
+		if chain.Contains(s.cfg.NodeHTTP) {
+			next, ok = chain.NextOf(s.cfg.NodeHTTP)
+		} else {
+			next = chain.Head()
+			ok = true
 		}
-		if replicated < s.cfg.ReplicaFactor {
+		if ok {
+			go s.propagateAlongChain(chunkID, data, next, chain)
+		}
+		// Registry update is deferred to the repair loop — chain propagation is
+		// authoritative; registry just records the chain targets for reads.
+		if err := s.RecordChunkRegistry(context.Background(), chunkID, replicas); err != nil {
+			log.Printf("putChunk %s registry deferred: %v", chunkID, err)
 			s.enqueueRepair(chunkID, replicas)
 		}
 	}
 	return replicas, nil
+}
+
+// propagateAlongChain forwards a chunk from self to the next target. The next
+// target will continue propagation. Runs in a background goroutine so the
+// originating write returns after the local store. A semaphore caps in-flight
+// goroutines to avoid OOM under write bursts.
+func (s *Service) propagateAlongChain(chunkID string, data []byte, next chunk.Target, chain *chunk.Chain) {
+	s.chainSlots <- struct{}{}
+	defer func() { <-s.chainSlots }()
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("chain %d propagate %s -> %s panic: %v", chain.ID, chunkID, next.NodeURL, r)
+		}
+	}()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := s.cfg.Transport.PutChunkReplica(ctx, next.NodeURL, chunkID, data); err != nil {
+		log.Printf("chain %d propagate %s -> %s (%s): %v", chain.ID, chunkID, next.NodeURL, next.Role, err)
+		s.enqueueRepair(chunkID, chain.NodeURLs())
+		return
+	}
+	log.Printf("chain %d propagate %s -> %s (%s) ok", chain.ID, chunkID, next.NodeURL, next.Role)
 }
 
 // GetChunk reads a chunk from local storage only.

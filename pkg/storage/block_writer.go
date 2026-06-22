@@ -75,6 +75,7 @@ func (w *blockWriter) Write(ctx context.Context, attr *meta.Attr, data []byte, o
 	if len(data) == 0 {
 		return nil
 	}
+	oldSize := attr.Size
 	end := offset + int64(len(data))
 	if end > int64(attr.Size) {
 		attr.Size = uint64(end)
@@ -84,14 +85,28 @@ func (w *blockWriter) Write(ctx context.Context, attr *meta.Attr, data []byte, o
 	for pos < len(data) {
 		absOff := offset + int64(pos)
 		chunkIdx, blockIdx, blockOff := meta.LocateBlock(absOff)
+		blockStart := int64(chunkIdx)*meta.ChunkSize + int64(blockIdx)*meta.BlockSize
 
 		w.mu.Lock()
 		key := blockKey{chunkIdx: chunkIdx, blockIdx: blockIdx}
 		buf := w.dirty[key]
 		if buf == nil {
-			existing := w.store.readBlock(ctx, attr, chunkIdx, blockIdx)
-			buf = make([]byte, meta.BlockSize)
-			copy(buf, existing)
+			needRead := blockOff > 0 && oldSize > uint64(blockStart)
+			if needRead {
+				buf = make([]byte, meta.BlockSize)
+				if existing := w.store.readBlock(ctx, attr, chunkIdx, blockIdx); len(existing) > 0 {
+					copy(buf, existing)
+				}
+			}
+		}
+		need := blockOff + len(data[pos:])
+		if cap(buf) < need {
+			grow := make([]byte, need, meta.BlockSize)
+			copy(grow, buf)
+			buf = grow
+		}
+		if len(buf) < need {
+			buf = buf[:need]
 		}
 		n := copy(buf[blockOff:], data[pos:])
 		w.dirty[key] = buf

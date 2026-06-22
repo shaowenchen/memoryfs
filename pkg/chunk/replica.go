@@ -2,9 +2,6 @@ package chunk
 
 import (
 	"encoding/json"
-	"fmt"
-	"hash/fnv"
-	"sort"
 
 	"github.com/shaowenchen/memoryfs/pkg/kv"
 )
@@ -71,27 +68,12 @@ func (r *Registry) ListIndexed() ([]string, error) {
 	return r.kv.SMembers(chunkIndexKey)
 }
 
-// SelectNodes picks primary and replica nodes for a chunk.
+// SelectNodes returns the chain target node URLs (HEAD first, TAIL last) for a chunk.
+// Backed by the chain-replication ChainTable: chunkID -> chain -> ordered targets.
 func SelectNodes(nodes []string, chunkID string, rf int) ([]string, error) {
-	if len(nodes) == 0 {
-		return nil, fmt.Errorf("no nodes available")
+	chain, err := ChainFor(nodes, chunkID, rf)
+	if err != nil {
+		return nil, err
 	}
-	if rf <= 0 {
-		rf = 1
-	}
-	if rf > len(nodes) {
-		rf = len(nodes)
-	}
-	sorted := append([]string(nil), nodes...)
-	sort.Strings(sorted)
-
-	h := fnv.New32a()
-	_, _ = h.Write([]byte(chunkID))
-	start := int(h.Sum32() % uint32(len(sorted)))
-
-	out := make([]string, 0, rf)
-	for i := 0; i < rf; i++ {
-		out = append(out, sorted[(start+i)%len(sorted)])
-	}
-	return out, nil
+	return chain.NodeURLs(), nil
 }

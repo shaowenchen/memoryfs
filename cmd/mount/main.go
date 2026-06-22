@@ -126,9 +126,10 @@ func main() {
 
 	opts := &fs.Options{
 		MountOptions: fuse.MountOptions{
-			Debug:  *debug,
-			Name:   "memoryfs",
-			FsName: "memoryfs",
+			Debug:      *debug,
+			Name:       "memoryfs",
+			FsName:     "memoryfs",
+			AllowOther: true,
 		},
 	}
 

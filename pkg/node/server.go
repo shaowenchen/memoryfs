@@ -16,21 +16,27 @@ import (
 	"github.com/shaowenchen/memoryfs/pkg/service"
 )
 
+// chunkConcurrency caps simultaneous chunk PUT bodies in memory.
+// Each body is read into a 4 MiB slice; this bounds peak transient RSS.
+const chunkConcurrency = 64
+
 // Server is the unified MemoryFS node HTTP server (API + dashboard, single binary).
 type Server struct {
-	svc       *service.Service
-	mux       *http.ServeMux
-	apiToken  string
-	uriPrefix string
+	svc           *service.Service
+	mux           *http.ServeMux
+	apiToken      string
+	uriPrefix     string
+	chunkPutSlots chan struct{}
 }
 
 // NewServer creates a node HTTP server.
 func NewServer(svc *service.Service, apiToken, uriPrefix string) *Server {
 	s := &Server{
-		svc:       svc,
-		mux:       http.NewServeMux(),
-		apiToken:  apiToken,
-		uriPrefix: NormalizeURIPrefix(uriPrefix),
+		svc:           svc,
+		mux:           http.NewServeMux(),
+		apiToken:      apiToken,
+		uriPrefix:     NormalizeURIPrefix(uriPrefix),
+		chunkPutSlots: make(chan struct{}, chunkConcurrency),
 	}
 	s.routes()
 	return s
@@ -435,6 +441,23 @@ func (s *Server) registryDelete(ctx context.Context, req fsRequest) (fsResponse,
 	return fsResponse{}, http.StatusOK
 }
 
+const chunkBodyLimit = 16 << 20
+
+// readChunkBody reads a PUT chunk body. Uses Content-Length when available to
+// pre-allocate exactly the right buffer, avoiding io.ReadAll's incremental
+// 2× growth that wastes ~4 MiB transient RSS per request under burst load.
+func readChunkBody(w http.ResponseWriter, r *http.Request) ([]byte, error) {
+	r.Body = http.MaxBytesReader(w, r.Body, chunkBodyLimit)
+	if r.ContentLength > 0 && r.ContentLength <= chunkBodyLimit {
+		buf := make([]byte, r.ContentLength)
+		if _, err := io.ReadFull(r.Body, buf); err != nil {
+			return nil, err
+		}
+		return buf, nil
+	}
+	return io.ReadAll(r.Body)
+}
+
 func (s *Server) handleChunks(w http.ResponseWriter, r *http.Request) {
 	id := strings.TrimPrefix(r.URL.Path, "/chunks/")
 	if id == "" {
@@ -451,8 +474,14 @@ func (s *Server) handleChunks(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write(data)
 	case http.MethodPut:
-		r.Body = http.MaxBytesReader(w, r.Body, 16<<20)
-		data, err := io.ReadAll(r.Body)
+		select {
+		case s.chunkPutSlots <- struct{}{}:
+			defer func() { <-s.chunkPutSlots }()
+		case <-r.Context().Done():
+			http.Error(w, "request cancelled", http.StatusServiceUnavailable)
+			return
+		}
+		data, err := readChunkBody(w, r)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return

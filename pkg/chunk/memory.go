@@ -39,6 +39,12 @@ func (s *MemoryStore) chunkRef(id string) ([]byte, bool) {
 func (s *MemoryStore) Put(id string, data []byte) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if old, ok := s.chunks[id]; ok && cap(old) >= len(data) {
+		buf := old[:len(data)]
+		copy(buf, data)
+		s.chunks[id] = buf
+		return nil
+	}
 	cp := make([]byte, len(data))
 	copy(cp, data)
 	s.chunks[id] = cp

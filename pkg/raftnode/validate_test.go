@@ -13,7 +13,7 @@ func TestAddrPort(t *testing.T) {
 		":19802":                                              "19802",
 		"127.0.0.1:19802":                                     "19802",
 		"memoryfs-0.headless.default.svc.cluster.local:19802": "19802",
-		"10.48.202.57:8081":                                   "8081",
+		"10.0.0.1:8081":                                       "8081",
 		"":                                                    "",
 	}
 	for in, want := range tests {
@@ -25,8 +25,8 @@ func TestAddrPort(t *testing.T) {
 
 func TestValidatePeerPortsRejectsStalePort(t *testing.T) {
 	err := validatePeerPorts([]raft.Server{
-		{ID: "memoryfs-0", Address: "10.48.202.57:19802"},
-		{ID: "memoryfs-1", Address: "10.48.202.58:8081"},
+		{ID: "memoryfs-0", Address: "10.0.0.1:19802"},
+		{ID: "memoryfs-1", Address: "10.0.0.2:8081"},
 	}, "19802", "/data/memoryfs/abc/memoryfs-0")
 	if err == nil {
 		t.Fatal("expected stale port validation error")
@@ -35,8 +35,8 @@ func TestValidatePeerPortsRejectsStalePort(t *testing.T) {
 
 func TestValidatePeerPortsAllowsMatchingPort(t *testing.T) {
 	err := validatePeerPorts([]raft.Server{
-		{ID: "memoryfs-0", Address: "10.48.202.57:19802"},
-		{ID: "memoryfs-1", Address: "10.48.202.58:19802"},
+		{ID: "memoryfs-0", Address: "10.0.0.1:19802"},
+		{ID: "memoryfs-1", Address: "10.0.0.2:19802"},
 	}, "19802", "/data")
 	if err != nil {
 		t.Fatal(err)

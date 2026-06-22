@@ -17,12 +17,22 @@ import (
 
 // GRPCTransport uses gRPC streaming chunk APIs.
 type GRPCTransport struct {
-	dial func(target string) (*grpc.ClientConn, error)
+	dial        func(target string) (*grpc.ClientConn, error)
+	httpReplica *HTTPTransport
 }
 
 // NewGRPCTransport creates a gRPC chunk transport.
 func NewGRPCTransport() *GRPCTransport {
+	return NewGRPCTransportWithHTTP(NewHTTPTransport())
+}
+
+// NewGRPCTransportWithHTTP creates a gRPC transport that falls back to HTTP for replica writes.
+func NewGRPCTransportWithHTTP(httpReplica *HTTPTransport) *GRPCTransport {
+	if httpReplica == nil {
+		httpReplica = NewHTTPTransport()
+	}
 	return &GRPCTransport{
+		httpReplica: httpReplica,
 		dial: func(target string) (*grpc.ClientConn, error) {
 			return grpc.NewClient(target,
 				grpc.WithTransportCredentials(insecure.NewCredentials()),
@@ -44,7 +54,7 @@ func (t *GRPCTransport) PutChunk(ctx context.Context, nodeURL, chunkID string, d
 
 func (t *GRPCTransport) PutChunkReplica(ctx context.Context, nodeURL, chunkID string, data []byte) error {
 	// replica writes use HTTP local-only path to avoid re-replication loops
-	return NewHTTPTransport().PutChunkReplica(ctx, nodeURL, chunkID, data)
+	return t.httpReplica.PutChunkReplica(ctx, nodeURL, chunkID, data)
 }
 
 func (t *GRPCTransport) putChunk(ctx context.Context, nodeURL, chunkID string, data []byte) error {
