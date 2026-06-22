@@ -44,7 +44,8 @@ func (s *Service) WriteAt(ctx context.Context, ino uint64, offset int64, data []
 		if existing, ok := s.cfg.Chunks.Get(blockID); ok && len(existing) > valid {
 			valid = len(existing)
 		}
-		if _, err := s.PutChunk(ctx, blockID, buf[:valid]); err != nil {
+		replicatePeers := valid >= meta.BlockSize
+		if _, err := s.putChunk(ctx, blockID, buf[:valid], replicatePeers); err != nil {
 			return nil, err
 		}
 		ensureLogicalChunk(attr, chunkIdx)

@@ -31,7 +31,7 @@ type RemoteMeta struct {
 func NewRemoteMeta(nodes []string) *RemoteMeta {
 	r := &RemoteMeta{
 		nodes:  append([]string(nil), nodes...),
-		client: &http.Client{Timeout: 120 * time.Second},
+		client: &http.Client{Timeout: 300 * time.Second},
 	}
 	if len(nodes) > 0 {
 		seed := strings.TrimRight(strings.TrimSpace(nodes[0]), "/")
@@ -171,10 +171,56 @@ func (r *RemoteMeta) WriteBlock(ctx context.Context, ino uint64, chunkIdx, block
 
 // WriteAt sends each FUSE write directly to the leader (no mount-side chunk cache).
 func (r *RemoteMeta) WriteAt(ctx context.Context, ino uint64, offset int64, data []byte) error {
-	var resp fsResp
-	return r.post(ctx, "/v1/fs/write", fsReq{
-		Ino: ino, Offset: offset, Data: data,
-	}, &resp, true)
+	ioCtx, cancel := detachMetaCtx(ctx)
+	defer cancel()
+	nodes := r.nodeList(true)
+	if len(nodes) == 0 {
+		return fmt.Errorf("no nodes configured")
+	}
+	var lastErr error
+	for _, base := range nodes {
+		err := r.doWriteRaw(ioCtx, base, ino, offset, data)
+		if err == nil {
+			mountlog.Debugf("meta write ok node=%s ino=%d off=%d bytes=%d", base, ino, offset, len(data))
+			return nil
+		}
+		lastErr = err
+		mountlog.Warnf("meta write node=%s: %v", base, err)
+	}
+	return lastErr
+}
+
+func (r *RemoteMeta) doWriteRaw(ctx context.Context, base string, ino uint64, offset int64, data []byte) error {
+	url := fmt.Sprintf("%s/v1/fs/write?ino=%d&offset=%d", strings.TrimRight(base, "/"), ino, offset)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(data))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/octet-stream")
+	resp, err := r.client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	raw, _ := io.ReadAll(resp.Body)
+	var out fsResp
+	_ = json.Unmarshal(raw, &out)
+	if resp.StatusCode == http.StatusTemporaryRedirect && out.Leader != "" {
+		leader := prefixedNodeURL(out.Leader, r.uriPrefix)
+		r.SetLeader(leader)
+		mountlog.Infof("meta write redirect to leader %s", leader)
+		return r.doWriteRaw(ctx, leader, ino, offset, data)
+	}
+	if resp.StatusCode >= 400 {
+		if out.Error != "" {
+			return mapClientError(out.Error)
+		}
+		return fmt.Errorf("%s: %s", url, string(raw))
+	}
+	if out.Error != "" {
+		return mapClientError(out.Error)
+	}
+	return nil
 }
 
 func (r *RemoteMeta) ListNodes(ctx context.Context) ([]string, error) {

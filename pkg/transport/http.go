@@ -19,7 +19,7 @@ type HTTPTransport struct {
 
 // NewHTTPTransport creates an HTTP chunk transport.
 func NewHTTPTransport() *HTTPTransport {
-	return &HTTPTransport{client: &http.Client{Timeout: 30 * time.Second}}
+	return &HTTPTransport{client: &http.Client{Timeout: 120 * time.Second}}
 }
 
 func (t *HTTPTransport) Kind() Kind { return KindHTTP }

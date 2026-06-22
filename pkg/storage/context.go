@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-const ioTimeout = 60 * time.Second
+const ioTimeout = 300 * time.Second
 
 // DetachIOContext returns a context for remote chunk/meta I/O.
 // FUSE can cancel the request context before HTTP completes; detached I/O keeps running.

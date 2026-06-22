@@ -174,8 +174,13 @@ func (s *Service) StoreChunkLocal(chunkID string, data []byte) error {
 	return s.cfg.Chunks.Put(chunkID, data)
 }
 
-// PutChunk stores a chunk locally and replicates to peer nodes.
+// PutChunk stores a chunk locally and replicates to all peer replicas.
 func (s *Service) PutChunk(ctx context.Context, chunkID string, data []byte) ([]string, error) {
+	return s.putChunk(ctx, chunkID, data, true)
+}
+
+// putChunk stores locally and optionally replicates to peers (partial blocks may stay primary-only until full).
+func (s *Service) putChunk(ctx context.Context, chunkID string, data []byte, replicatePeers bool) ([]string, error) {
 	if !s.cfg.Lifecycle.AcceptsChunks() {
 		return nil, fmt.Errorf("node is draining")
 	}
@@ -189,31 +194,30 @@ func (s *Service) PutChunk(ctx context.Context, chunkID string, data []byte) ([]
 	}
 
 	shouldStore := chunkContains(replicas, s.cfg.NodeHTTP)
+	replicated := 0
 	if shouldStore {
 		if err := s.cfg.Chunks.Put(chunkID, data); err != nil {
 			return nil, err
 		}
-	}
-
-	replicated := 0
-	for _, node := range replicas {
-		if node == s.cfg.NodeHTTP {
-			if shouldStore {
-				replicated++
-			}
-			continue
-		}
-		if err := s.cfg.Transport.PutChunkReplica(ctx, node, chunkID, data); err != nil {
-			log.Printf("replicate %s -> %s: %v", chunkID, node, err)
-			continue
-		}
 		replicated++
+	}
+	if replicatePeers {
+		for _, node := range replicas {
+			if node == s.cfg.NodeHTTP {
+				continue
+			}
+			if err := s.cfg.Transport.PutChunkReplica(ctx, node, chunkID, data); err != nil {
+				log.Printf("replicate %s -> %s: %v", chunkID, node, err)
+				continue
+			}
+			replicated++
+		}
 	}
 
 	if err := s.RecordChunkRegistry(ctx, chunkID, replicas); err != nil {
 		return replicas, fmt.Errorf("registry: %w", err)
 	}
-	if replicated < s.cfg.ReplicaFactor {
+	if replicatePeers && replicated < s.cfg.ReplicaFactor {
 		s.enqueueRepair(chunkID, replicas)
 	}
 	return replicas, nil

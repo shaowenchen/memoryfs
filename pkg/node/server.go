@@ -3,9 +3,11 @@ package node
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -309,14 +311,56 @@ func (s *Server) handleWrite(fn fsHandler) http.HandlerFunc {
 			writeJSON(w, http.StatusTemporaryRedirect, fsResponse{Leader: leader})
 			return
 		}
-		var req fsRequest
-		if err := decodeJSON(r, &req); err != nil {
+		req, err := parseWriteRequest(w, r)
+		if err != nil {
 			writeJSON(w, http.StatusBadRequest, fsResponse{Error: err.Error()})
 			return
 		}
 		resp, code := fn(r.Context(), req)
 		writeJSON(w, code, resp)
 	}
+}
+
+func parseWriteRequest(w http.ResponseWriter, r *http.Request) (fsRequest, error) {
+	if r.Header.Get("Content-Type") == "application/octet-stream" {
+		ino, err := parseQueryUint64(r.URL.Query().Get("ino"))
+		if err != nil || ino == 0 {
+			return fsRequest{}, fmt.Errorf("missing or invalid ino")
+		}
+		offset, err := parseQueryInt64(r.URL.Query().Get("offset"))
+		if err != nil {
+			return fsRequest{}, fmt.Errorf("invalid offset")
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, 16<<20)
+		data, err := io.ReadAll(r.Body)
+		if err != nil {
+			return fsRequest{}, err
+		}
+		if len(data) == 0 {
+			return fsRequest{}, fmt.Errorf("missing data")
+		}
+		return fsRequest{Ino: ino, Offset: offset, Data: data}, nil
+	}
+	var req fsRequest
+	if err := decodeJSON(r, &req); err != nil {
+		return fsRequest{}, err
+	}
+	return req, nil
+}
+
+func parseQueryUint64(raw string) (uint64, error) {
+	if raw == "" {
+		return 0, fmt.Errorf("empty")
+	}
+	v, err := strconv.ParseUint(raw, 10, 64)
+	return v, err
+}
+
+func parseQueryInt64(raw string) (int64, error) {
+	if raw == "" {
+		return 0, nil
+	}
+	return strconv.ParseInt(raw, 10, 64)
 }
 
 func (s *Server) getattr(ctx context.Context, req fsRequest) (fsResponse, int) {
