@@ -69,7 +69,7 @@ func Save(c *Config) error {
 		return fmt.Errorf("cliconfig: tempfile: %w", err)
 	}
 	tmpName := tmp.Name()
-	defer os.Remove(tmpName)
+	defer func() { _ = os.Remove(tmpName) }()
 	if _, err := tmp.Write(append(data, '\n')); err != nil {
 		_ = tmp.Close()
 		return fmt.Errorf("cliconfig: write: %w", err)
