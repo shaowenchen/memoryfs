@@ -165,7 +165,9 @@ func (w *blockWriter) Write(ctx context.Context, attr *meta.Attr, data []byte, o
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	needPeriodic := !w.lastAutoFlush.IsZero() && now.Sub(w.lastAutoFlush) >= autoFlushInterval
-	needSmallFast := len(data) <= smallWriteImmediateFlushBytes
+	// Keep tiny-file latency low, but avoid forcing a CRAQ commit on every tiny
+	// append when a large stream is written with small IO size (e.g. dd bs=1K).
+	needSmallFast := len(data) <= smallWriteImmediateFlushBytes && attr.Size <= smallWriteImmediateFlushBytes
 	if needPeriodic || needSmallFast {
 		for key := range w.dirty {
 			if err := w.flushLocked(ctx, key, attr.Size); err != nil {
