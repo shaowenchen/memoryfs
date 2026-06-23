@@ -40,10 +40,9 @@ func runNode(args []string) {
 	advertiseRaft := fs.String("advertise-raft", "", "Raft address advertised to peers (default: same as -raft)")
 	dataDir := fs.String("data", "./data", "data directory for raft/meta")
 	chunkDir := fs.String("chunk-dir", "", "local disk directory for chunks (default: {data}/{id}/chunks)")
-	chunkBackend := fs.String("chunk-backend", "disk", "chunk backend: disk, tiered, or memory")
+	chunkBackend := fs.String("chunk-backend", "memory", "chunk backend: memory (direct RAM, default) or disk (direct disk I/O)")
 	replicaFactor := fs.Int("replica-factor", 2, "chunk replication factor across nodes")
-	memCacheMB := fs.Int64("mem-cache-mb", 0, "in-memory read cache size in MB (0=disabled, tiered backend enables 512MB default)")
-	diskQuotaGB := fs.Int64("disk-quota-gb", 0, "local disk quota in GB (0=unlimited)")
+	diskQuotaGB := fs.Int64("disk-quota-gb", 0, "per-node chunk store quota in GB (0=unlimited; for the memory backend this caps RAM payload)")
 	gcInterval := fs.Duration("gc-interval", 5*time.Minute, "orphan chunk GC interval (0=disabled)")
 	flushInterval := fs.Duration("flush-interval", 30*time.Second, "local chunk flush/fsync interval (0=disabled except on shutdown)")
 	maxFileAge := fs.Duration("max-file-age", 0, "expire files older than this duration (0=disabled)")
@@ -99,7 +98,6 @@ func runNode(args []string) {
 	chunkStore, err := chunk.OpenStoreWithOptions(chunk.OpenStoreOptions{
 		Backend:     *chunkBackend,
 		Dir:         chunkPath,
-		MemCacheMB:  *memCacheMB,
 		DiskQuotaGB: *diskQuotaGB,
 	})
 	if err != nil {

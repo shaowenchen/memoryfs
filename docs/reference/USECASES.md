@@ -1,6 +1,6 @@
 # MemoryFS 使用场景与优化指南
 
-MemoryFS 是面向**高速临时/半持久数据**的分布式文件系统：元数据通过 Raft 强一致，Chunk 多副本落盘并可选用内存读缓存。以下按典型场景说明如何配置，以及仍需注意的限制。
+MemoryFS 是**内存优先**的分布式文件系统：元数据通过 Raft 强一致，Chunk 按 RF 跨节点复制，并发读写**直接命中存储**——无中间缓存层（Direct）。两种 chunk 后端：`memory`（默认，纯 RAM）与 `disk`（直接磁盘 I/O）。
 
 ## 典型使用场景
 
@@ -10,13 +10,14 @@ MemoryFS 是面向**高速临时/半持久数据**的分布式文件系统：元
 
 **推荐配置**：
 ```bash
-node -chunk-backend tiered -mem-cache-mb 2048 -replica-factor 2 \
+memoryfs node -chunk-backend memory -disk-quota-gb 64 -replica-factor 2 \
      -default-ttl 24h -max-file-age 48h
 ```
 
 **要点**：
-- `tiered`：热数据命中内存，重复 epoch 读取更快
-- `-default-ttl`：新建文件自动过期，避免训练任务异常退出后磁盘堆积
+- `memory`：chunk 直接驻 RAM，无 cache 层抖动
+- `-disk-quota-gb`：每个节点的 RAM 上限（预分配 buffer slot）
+- `-default-ttl`：新建文件自动过期，避免训练任务异常退出后内存堆积
 - RF=2：单节点故障不丢数据，滚动更新时可 drain
 
 **注意**：大文件按 4 MiB 分 chunk，元数据更新频繁；极高并发写同一目录需关注 Raft leader 瓶颈。
@@ -29,35 +30,34 @@ node -chunk-backend tiered -mem-cache-mb 2048 -replica-factor 2 \
 
 **推荐配置**：
 ```bash
-node -chunk-backend tiered -mem-cache-mb 1024 -disk-quota-gb 100 \
+memoryfs node -chunk-backend disk -disk-quota-gb 100 \
      -gc-interval 10m -replica-factor 2
 ```
 
 **要点**：
+- `disk` 后端直接落盘，重启后仍可命中缓存
 - 磁盘配额防止某 Runner 写爆节点
-- 定期 GC 清理孤儿 chunk（例如异常中断的构建）
+- 定期 GC 清理孤儿 chunk
 - 挂载点可挂到 `$GOCACHE` 或 `$CI_CACHE_DIR`
 
 **注意**：缓存命中依赖文件名稳定；不同 job 写同名文件会互相覆盖（POSIX 语义）。
 
 ---
 
-### 3. 敏感临时数据（可选纯内存）
+### 3. 敏感临时数据（纯内存）
 
 **场景**：密钥材料、临时解密文件，希望进程结束或断电后不可恢复。
 
 **推荐配置**：
 ```bash
-node -chunk-backend memory -replica-factor 1 -standalone
-# 或 disk + 短 TTL
-node -chunk-backend disk -default-ttl 1h -max-file-age 2h
+memoryfs node -chunk-backend memory -replica-factor 1 -standalone
 ```
 
 **要点**：
-- `memory` 后端不落盘，断电即失（多副本仍在内存中，RF>1 时副本在其他节点内存）
+- `memory` 后端不落盘，断电即失（RF>1 时副本仍在其他节点内存）
 - 纯内存 + RF=1 适合单节点隔离环境
 
-**注意**：`-chunk-backend memory` 时 rolling update 必须先 drain 到其他节点，否则数据丢失。
+**注意**：rolling update 必须先 drain 到其他节点，否则数据丢失。
 
 ---
 
@@ -67,13 +67,13 @@ node -chunk-backend disk -default-ttl 1h -max-file-age 2h
 
 **推荐配置**：
 ```bash
-node -chunk-backend tiered -mem-cache-mb 4096 -default-ttl 6h \
+memoryfs node -chunk-backend memory -disk-quota-gb 96 -default-ttl 6h \
      -max-file-age 12h -gc-interval 5m
 ```
 
 **要点**：
-- 写路径落盘 + 读路径缓存，兼顾吞吐与重启恢复
-- TTL 按 mtime 或 ExpireAt 清理
+- `memory` 后端读写直达 RAM，吞吐由网络 + RF 决定，不受磁盘 IOPS 限制
+- TTL 按 mtime 或 ExpireAt 清理，定期释放 RAM
 
 **注意**：无文件锁/租约；多 writer 并发写同一文件行为未定义，应用层应一写多读或分文件。
 
@@ -85,23 +85,16 @@ node -chunk-backend tiered -mem-cache-mb 4096 -default-ttl 6h \
 
 **推荐配置**（Helm values 示意）：
 ```yaml
-args:
-  - node
-  - -chunk-backend=tiered
-  - -mem-cache-mb=512
-  - -disk-quota-gb=50
-  - -replica-factor=2
-volumeMounts:
-  - mountPath: /data/chunks
-    name: chunk-pvc
-lifecycle:
-  preStop:
-    exec:
-      command: ["curl", "-X", "POST", "http://localhost:19800/v1/lifecycle/drain"]
+replicaFactor: 2
+node:
+  chunkBackend: "memory"   # 留空时 diskSync.enabled=false 也默认 memory
+  storageGB: 32
+  diskSync:
+    enabled: false         # 设 true 切到 disk 后端，chunk 走 hostPath/PVC
 ```
 
 **要点**：
-- PVC 保留 chunk 目录，Pod 重建后 `ready` + peer rebuild 加速恢复
+- 默认 memory 后端，读写直达 RAM；切换到 disk 后端时 chunk 写 hostPath/PVC
 - FUSE mount 需 `privileged` + `/dev/fuse`
 
 **注意**：FUSE 客户端单点；生产建议 mount sidecar 与业务 Pod 同生命周期，或每节点 DaemonSet 挂载后 hostPath 共享。
@@ -114,8 +107,8 @@ lifecycle:
 
 **推荐配置**：
 ```bash
-node -chunk-backend disk -disk-quota-gb 500 -replica-factor 2
-mount -nodes http://n1:19800,http://n2:19800 -replica-factor 2
+memoryfs node -chunk-backend disk -disk-quota-gb 500 -replica-factor 2
+memoryfs mount -nodes http://n1:19800,http://n2:19800 -mount /mnt/memoryfs -f
 ```
 
 **要点**：
@@ -150,8 +143,8 @@ curl -X POST http://127.0.0.1:19800/v1/gc
 |------|------|------|
 | 多副本 + 磁盘持久化 | ✅ | RF 可配，本地 chunk 目录 |
 | 滚动更新 drain/ready | ✅ | SIGTERM 自动 drain |
-| 分层存储 (tiered) | ✅ | 热读内存缓存 |
-| 磁盘配额 | ✅ | `-disk-quota-gb` |
+| Direct memory/disk 后端 | ✅ | 读写直达存储，无中间缓存层 |
+| 磁盘/内存配额 | ✅ | `-disk-quota-gb`（memory 后端时即 RAM 上限） |
 | TTL / 文件过期 | ✅ | `-default-ttl`、`-max-file-age` |
 | 孤儿 chunk GC | ✅ | 后台 + `/v1/gc` |
 | 节点统计 | ✅ | `/v1/stats` |
@@ -172,11 +165,11 @@ curl -X POST http://127.0.0.1:19800/v1/gc
 
 | 场景 | backend | RF | 关键参数 |
 |------|---------|-----|----------|
-| ML scratch | tiered | 2 | mem-cache-mb, default-ttl |
-| CI 缓存 | tiered | 2 | disk-quota-gb, gc-interval |
+| ML scratch | memory | 2 | disk-quota-gb, default-ttl |
+| CI 缓存 | disk | 2 | disk-quota-gb, gc-interval |
 | 敏感临时 | memory | 1 | standalone |
-| ETL staging | tiered | 2 | default-ttl, max-file-age |
-| K8s shared vol | tiered/disk | 2 | PVC + lifecycle hooks |
+| ETL staging | memory | 2 | default-ttl, max-file-age |
+| K8s shared vol | memory/disk | 2 | storageGB + lifecycle hooks |
 | 媒体转码 | disk | 2 | disk-quota-gb, gRPC |
 
 ---

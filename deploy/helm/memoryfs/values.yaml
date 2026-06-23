@@ -23,7 +23,7 @@ serviceAccount:
 replicaFactor: 2
 
 node:
-  # Empty = auto from diskSync: memory (off) / buffered (on)
+  # Empty = auto from diskSync: memory (off, default) / disk (on, persists to dataDir)
   chunkBackend: ""
   # Max chunk data per pod (GB). Pod memory request/limit = storageGB + 1Gi.
   storageGB: 3

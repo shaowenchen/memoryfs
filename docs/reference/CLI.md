@@ -45,11 +45,10 @@ memoryfs config clear  # 删除文件
 | `-http` / `-grpc` / `-raft` / `-rdma` | :19800 等 | 监听地址（见 `pkg/ports`） |
 | `-advertise-http` / `-advertise-raft` | | 集群内宣告地址 |
 | `-data` | ./data | Raft/元数据目录 |
-| `-chunk-dir` | `{data}/{id}/chunks` | Chunk 落盘目录 |
-| `-chunk-backend` | disk | disk / tiered / buffered / memory |
+| `-chunk-dir` | `{data}/{id}/chunks` | Chunk 落盘目录（仅 `disk` 后端使用） |
+| `-chunk-backend` | memory | `memory`（内存直接读写，默认）/ `disk`（磁盘直接读写，Direct I/O，无内存缓存层） |
 | `-replica-factor` | 2 | 跨节点副本数 |
-| `-mem-cache-mb` | 0 | tiered 内存缓存 MB |
-| `-disk-quota-gb` | 0 | 磁盘配额 |
+| `-disk-quota-gb` | 0 | chunk store 容量上限 GB（0=不限）。`memory` 后端按此值预分配 buffer slot |
 | `-gc-interval` | 5m | 孤儿 chunk GC（0=关） |
 | `-flush-interval` | 30s | 定时落盘/fsync |
 | `-default-ttl` / `-max-file-age` | 0 | 文件过期 |

@@ -97,8 +97,6 @@ spec:
               value: {{ include "memoryfs.chunkBackend" . | quote }}
             - name: MEMORYFS_REPLICA_FACTOR
               value: {{ .Values.replicaFactor | quote }}
-            - name: MEMORYFS_MEM_CACHE_MB
-              value: "0"
             - name: MEMORYFS_DISK_QUOTA_GB
               value: {{ include "memoryfs.diskQuotaGB" . | quote }}
             - name: MEMORYFS_GC_INTERVAL

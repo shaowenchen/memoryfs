@@ -34,7 +34,7 @@
 |------|------|
 | **StatefulSet** | Pod 有稳定 DNS（`pod-0.headless`），Raft 成员身份不变 |
 | **3 节点起步** | Raft 容忍 1 节点故障；RF=2 时 chunk 可丢 1 副本 |
-| **tiered / buffered** | 热读走内存；`diskSync` 开启时定时落盘到 hostPath |
+| **Direct memory/disk** | 默认 `memory` 后端，RAM 直读直写；`diskSync` 打开则切到 `disk` 后端，磁盘直接 I/O |
 | **Headless Service** | Pod 内 join 用 DNS 找 leader；**对外注册** `-advertise-http/raft` 用节点 **host IP**（供宿主机 FUSE 等集群外访问） |
 | **PDB minAvailable=2** | 滚动更新/节点维护时保持 quorum |
 | **preStop drain** | 缩容/重启前把本地 chunk 复制到 peer |
@@ -254,7 +254,7 @@ kubectl -n memoryfs exec memoryfs-0 -- tar -czf - /data > backup-node0.tar.gz
 | `image.repository` | `shaowenchen/memoryfs` | 镜像仓库 |
 | `image.tag` | `latest` | 镜像标签 |
 | `imagePullPolicy` | `Always`（模板固定） | 每次 Pod 创建/重启拉取最新镜像 |
-| `node.chunkBackend` | `memory` | 空值时随 `diskSync` 自动选 `memory`/`buffered` |
+| `node.chunkBackend` | `memory` | 空值时随 `diskSync` 自动选 `memory`/`disk`（均为 Direct，无缓存层） |
 | `node.diskSync.enabled` | `false` | 定时落盘开关 |
 | `node.diskSync.interval` | `30s` | 落盘/fsync 间隔（开关开启时） |
 | `node.storage.type` | `hostPath` | `hostPath`=节点本地盘；`emptyDir`=临时卷 |
@@ -314,7 +314,7 @@ helm upgrade memoryfs "${CHART}" -n memoryfs --set dashboard.uriPrefix=
 | `MEMORYFS_INSTANCE_ID` | 部署实例 ID（Secret 注入，hostPath 模式） |
 | `MEMORYFS_STORAGE_ROOT` | hostPath 根目录（如 `/data/memoryfs`），与 instance ID、Pod 名组合数据路径 |
 | `MEMORYFS_REPLICA_FACTOR` | Chunk 副本数 |
-| `MEMORYFS_CHUNK_BACKEND` | disk / tiered / buffered / memory |
+| `MEMORYFS_CHUNK_BACKEND` | `memory`（默认）/ `disk` — 均为 Direct，无中间缓存 |
 | `MEMORYFS_URI_PREFIX` | HTTP 路径前缀（如 `/memoryfs`） |
 | `MEMORYFS_API_TOKEN` | API Bearer Token |
 

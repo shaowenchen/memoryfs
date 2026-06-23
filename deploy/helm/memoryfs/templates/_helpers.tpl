@@ -95,7 +95,7 @@ capabilities:
 {{- if $backend -}}
 {{- $backend -}}
 {{- else if .Values.node.diskSync.enabled -}}
-buffered
+disk
 {{- else -}}
 memory
 {{- end -}}

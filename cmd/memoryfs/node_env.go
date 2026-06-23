@@ -33,9 +33,8 @@ import (
 //	MEMORYFS_STORAGE_ROOT          storage root (paired with INSTANCE_ID)
 //	MEMORYFS_DATA                  raft/meta data root (default /data)
 //	MEMORYFS_CHUNK_DIR             chunk dir override
-//	MEMORYFS_CHUNK_BACKEND         chunk backend (default tiered)
+//	MEMORYFS_CHUNK_BACKEND         chunk backend: "memory" (default) or "disk"
 //	MEMORYFS_REPLICA_FACTOR        default 2
-//	MEMORYFS_MEM_CACHE_MB          default 512
 //	MEMORYFS_DISK_QUOTA_GB         default 0
 //	MEMORYFS_GC_INTERVAL           default 5m
 //	MEMORYFS_FLUSH_INTERVAL        default 30s
@@ -102,9 +101,8 @@ func runNodeEnv(extra []string) {
 		_ = os.RemoveAll(filepath.Join(nodeData, "snapshots"))
 	}
 
-	chunkBackend := envOr("MEMORYFS_CHUNK_BACKEND", "tiered")
+	chunkBackend := envOr("MEMORYFS_CHUNK_BACKEND", "memory")
 	replicaFactor := normalizeUint(envOr("MEMORYFS_REPLICA_FACTOR", "2"))
-	memCacheMB := normalizeUint(envOr("MEMORYFS_MEM_CACHE_MB", "512"))
 	diskQuotaGB := normalizeUint(envOr("MEMORYFS_DISK_QUOTA_GB", "0"))
 	gcInterval := envOr("MEMORYFS_GC_INTERVAL", "5m")
 	flushInterval := envOr("MEMORYFS_FLUSH_INTERVAL", "30s")
@@ -139,7 +137,6 @@ func runNodeEnv(extra []string) {
 		"-chunk-dir", chunkDir,
 		"-chunk-backend", chunkBackend,
 		"-replica-factor", replicaFactor,
-		"-mem-cache-mb", memCacheMB,
 		"-disk-quota-gb", diskQuotaGB,
 		"-gc-interval", gcInterval,
 		"-flush-interval", flushInterval,
