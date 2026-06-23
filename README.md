@@ -55,6 +55,12 @@ df -h /mnt/memoryfs
 time dd if=/dev/zero of=/mnt/memoryfs/test.img bs=1M count=1024 oflag=direct status=progress
 ```
 
+读取测试：
+
+```bash
+time dd if=/mnt/memoryfs/test.img of=/dev/null bs=1M iflag=direct status=progress
+```
+
 ### 4. 卸载
 
 卸载 FUSE：
