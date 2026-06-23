@@ -80,9 +80,6 @@ func printStatusText(w io.Writer, seed, prefix string, ov *service.ClusterOvervi
 		)
 	}
 	_ = tw.Flush()
-	_, _ = fmt.Fprintln(w)
-	_, _ = fmt.Fprintln(w, "EPOCH: cluster membership generation (bumps when a node joins / leaves / role changes);")
-	_, _ = fmt.Fprintln(w, "       writes go through chains derived from the leader's current epoch.")
 }
 
 func valueOr(v, fallback string) string {

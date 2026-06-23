@@ -4,6 +4,7 @@ import (
 	"context"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/shaowenchen/memoryfs/pkg/meta"
 	"github.com/shaowenchen/memoryfs/pkg/transport"
@@ -89,7 +90,7 @@ func TestWriteThroughOnEveryFUSEWrite(t *testing.T) {
 	}
 }
 
-func TestSmallWriteBufferedUntilLeaderFlush(t *testing.T) {
+func TestSmallWriteFlushesImmediately(t *testing.T) {
 	tp := &recordingTransport{}
 	c := newChunkStore(nil, []string{"http://n1:19800"}, 1, tp, "")
 	attr := &meta.Attr{Ino: 9, Size: 0}
@@ -97,14 +98,36 @@ func TestSmallWriteBufferedUntilLeaderFlush(t *testing.T) {
 	if err := c.Write(context.Background(), attr, []byte("hi"), 0); err != nil {
 		t.Fatal(err)
 	}
-	if tp.putCount() != 0 {
-		t.Fatalf("expected no direct chunk PUT without flusher, got %d", tp.putCount())
+	if tp.putCount() != 1 {
+		t.Fatalf("expected immediate chunk PUT for small write, got %d", tp.putCount())
 	}
 	if err := c.FlushFile(context.Background(), attr.Ino); err != nil {
 		t.Fatal(err)
 	}
 	if tp.putCount() != 1 {
-		t.Fatalf("expected buffered flush via transport, got %d", tp.putCount())
+		t.Fatalf("expected no extra PUT after explicit flush, got %d", tp.putCount())
+	}
+}
+
+func TestPeriodicAutoFlushForPartialBlocks(t *testing.T) {
+	tp := &recordingTransport{}
+	c := newChunkStore(nil, []string{"http://n1:19800"}, 1, tp, "")
+	attr := &meta.Attr{Ino: 11, Size: 0}
+	partial := make([]byte, 128<<10) // 128 KiB > small write threshold
+
+	if err := c.Write(context.Background(), attr, partial, 0); err != nil {
+		t.Fatal(err)
+	}
+	if tp.putCount() != 0 {
+		t.Fatalf("expected first partial write to stay buffered, got %d puts", tp.putCount())
+	}
+
+	time.Sleep(autoFlushInterval + 5*time.Millisecond)
+	if err := c.Write(context.Background(), attr, partial, int64(len(partial))); err != nil {
+		t.Fatal(err)
+	}
+	if tp.putCount() < 1 {
+		t.Fatalf("expected periodic auto flush to emit at least one PUT, got %d", tp.putCount())
 	}
 }
 

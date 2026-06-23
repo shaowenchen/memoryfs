@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"sync"
+	"time"
 
 	"github.com/shaowenchen/memoryfs/pkg/meta"
 )
@@ -18,7 +19,18 @@ type blockWriter struct {
 	mu    sync.Mutex
 	dirty map[blockKey][]byte
 	valid map[blockKey]int
+	// lastAutoFlush gates periodic background-like flushing on write path.
+	lastAutoFlush time.Time
 }
+
+const (
+	// smallWriteImmediateFlushBytes flushes tiny writes quickly so small files
+	// become visible/durable in node memory without waiting for fsync/release.
+	smallWriteImmediateFlushBytes = 64 << 10 // 64 KiB
+	// autoFlushInterval bounds tail latency for partial blocks under sustained
+	// small writes while still allowing short batching windows.
+	autoFlushInterval = 10 * time.Millisecond
+)
 
 func (c *ChunkStore) writerFor(ino uint64) *blockWriter {
 	if w, ok := c.writers.Load(ino); ok {
@@ -86,9 +98,33 @@ func (w *blockWriter) Write(ctx context.Context, attr *meta.Attr, data []byte, o
 		absOff := offset + int64(pos)
 		chunkIdx, blockIdx, blockOff := meta.LocateBlock(absOff)
 		blockStart := int64(chunkIdx)*meta.ChunkSize + int64(blockIdx)*meta.BlockSize
+		remainingInBlock := meta.BlockSize - blockOff
+		if remainingInBlock <= 0 {
+			remainingInBlock = meta.BlockSize
+		}
+		writeN := len(data) - pos
+		if writeN > remainingInBlock {
+			writeN = remainingInBlock
+		}
+		key := blockKey{chunkIdx: chunkIdx, blockIdx: blockIdx}
+
+		// Fast path: a full 4 MiB aligned block can be sent directly without
+		// staging/copying into mount-side block buffers.
+		if blockOff == 0 && writeN == meta.BlockSize {
+			blockID := meta.BlockID(w.ino, chunkIdx, blockIdx)
+			w.mu.Lock()
+			delete(w.dirty, key)
+			delete(w.valid, key)
+			w.mu.Unlock()
+			ensureChunk(attr, chunkIdx)
+			if err := w.store.writeChunk(ctx, blockID, data[pos:pos+writeN]); err != nil {
+				return err
+			}
+			pos += writeN
+			continue
+		}
 
 		w.mu.Lock()
-		key := blockKey{chunkIdx: chunkIdx, blockIdx: blockIdx}
 		buf := w.dirty[key]
 		if buf == nil {
 			needRead := blockOff > 0 && oldSize > uint64(blockStart)
@@ -99,7 +135,7 @@ func (w *blockWriter) Write(ctx context.Context, attr *meta.Attr, data []byte, o
 				}
 			}
 		}
-		need := blockOff + len(data[pos:])
+		need := blockOff + writeN
 		if cap(buf) < need {
 			grow := make([]byte, need, meta.BlockSize)
 			copy(grow, buf)
@@ -108,7 +144,7 @@ func (w *blockWriter) Write(ctx context.Context, attr *meta.Attr, data []byte, o
 		if len(buf) < need {
 			buf = buf[:need]
 		}
-		n := copy(buf[blockOff:], data[pos:])
+		n := copy(buf[blockOff:], data[pos:pos+writeN])
 		w.dirty[key] = buf
 		prev := w.valid[key]
 		if endOff := blockOff + n; endOff > prev {
@@ -124,6 +160,21 @@ func (w *blockWriter) Write(ctx context.Context, attr *meta.Attr, data []byte, o
 			}
 		}
 		pos += n
+	}
+	now := time.Now()
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	needPeriodic := !w.lastAutoFlush.IsZero() && now.Sub(w.lastAutoFlush) >= autoFlushInterval
+	needSmallFast := len(data) <= smallWriteImmediateFlushBytes
+	if needPeriodic || needSmallFast {
+		for key := range w.dirty {
+			if err := w.flushLocked(ctx, key, attr.Size); err != nil {
+				return err
+			}
+		}
+		w.lastAutoFlush = now
+	} else if w.lastAutoFlush.IsZero() {
+		w.lastAutoFlush = now
 	}
 	return nil
 }

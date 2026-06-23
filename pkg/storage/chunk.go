@@ -158,6 +158,17 @@ func (c *ChunkStore) nodesForChunk(ctx context.Context, chunkID string) []string
 	return cluster
 }
 
+// writeTargetsForChunk returns deterministic chain targets from current cluster
+// membership only. It intentionally bypasses registry lookups to keep the hot
+// write path free of extra meta round-trips.
+func (c *ChunkStore) writeTargetsForChunk(chunkID string) []string {
+	cluster := applyNodePrefix(c.Nodes(), c.uriPrefix)
+	if selected, err := chunk.SelectNodes(cluster, chunkID, c.replicaFactor); err == nil {
+		return selected
+	}
+	return cluster
+}
+
 // Read reads up to len(dest) bytes at offset from a file identified by attr.
 func (c *ChunkStore) Read(ctx context.Context, attr *meta.Attr, dest []byte, offset int64) (int, error) {
 	if offset >= int64(attr.Size) {
@@ -333,7 +344,7 @@ func (c *ChunkStore) writeChunk(ctx context.Context, chunkID string, data []byte
 	ioCtx, cancel := DetachIOContext(ctx)
 	defer cancel()
 
-	targets := c.nodesForChunk(ioCtx, chunkID)
+	targets := c.writeTargetsForChunk(chunkID)
 	if len(targets) == 0 {
 		return ErrNoNodes
 	}
@@ -357,7 +368,7 @@ func (c *ChunkStore) writeChunk(ctx context.Context, chunkID string, data []byte
 func (c *ChunkStore) deleteChunk(ctx context.Context, chunkID string) error {
 	ioCtx, cancel := DetachIOContext(ctx)
 	defer cancel()
-	nodes := c.nodesForChunk(ioCtx, chunkID)
+	nodes := c.writeTargetsForChunk(chunkID)
 	if len(nodes) == 0 {
 		return ErrNoNodes
 	}
