@@ -3,9 +3,11 @@ package storage
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 
 	"github.com/shaowenchen/memoryfs/pkg/meta"
+	"github.com/shaowenchen/memoryfs/pkg/transport"
 )
 
 type fakeReplicaLookup struct {
@@ -71,6 +73,177 @@ func TestMergeNodeURLs(t *testing.T) {
 	if len(got) != 2 || got[0] != "http://a:19800" || got[1] != "http://b:19800" {
 		t.Fatalf("unexpected merge: %v", got)
 	}
+}
+
+func TestWriteAndRead(t *testing.T) {
+	ctx := context.Background()
+	
+	// Create a test attribute
+	attr := &meta.Attr{
+		Ino:    123,
+		Size:   0,
+		Chunks: []string{},
+	}
+	
+	// Create ChunkStore with mock transport
+	mockTransport := &mockTransport{chunks: make(map[string][]byte)}
+	store := &ChunkStore{
+		transport:     mockTransport,
+		replicaFactor: 1,
+		nodes:         []string{"mock://localhost"},
+	}
+	
+	// Test 1: Write 8 MiB data (2 full blocks)
+	data := make([]byte, 8*1024*1024)
+	for i := range data {
+		data[i] = byte(i % 256)
+	}
+	
+	if err := store.Write(ctx, attr, data, 0); err != nil {
+		t.Fatalf("Write failed: %v", err)
+	}
+	
+	if attr.Size != uint64(len(data)) {
+		t.Fatalf("Size mismatch: got %d, want %d", attr.Size, len(data))
+	}
+	
+	// Flush to ensure data is written
+	if err := store.FlushFile(ctx, attr.Ino); err != nil {
+		t.Fatalf("FlushFile failed: %v", err)
+	}
+	
+	// Test 2: Read back the data
+	readBuf := make([]byte, len(data))
+	n, err := store.Read(ctx, attr, readBuf, 0)
+	if err != nil {
+		t.Fatalf("Read failed: %v", err)
+	}
+	
+	if n != len(data) {
+		t.Fatalf("Read length mismatch: got %d, want %d", n, len(data))
+	}
+	
+	// Test 3: Verify data integrity
+	for i := 0; i < len(data); i++ {
+		if readBuf[i] != data[i] {
+			t.Fatalf("Data mismatch at offset %d: got %d, want %d", i, readBuf[i], data[i])
+		}
+	}
+	
+	// Test 4: Partial read
+	partialBuf := make([]byte, 1024*1024)
+	n, err = store.Read(ctx, attr, partialBuf, 2*1024*1024)
+	if err != nil {
+		t.Fatalf("Partial read failed: %v", err)
+	}
+	
+	if n != len(partialBuf) {
+		t.Fatalf("Partial read length mismatch: got %d, want %d", n, len(partialBuf))
+	}
+	
+	// Verify partial read data
+	for i := 0; i < len(partialBuf); i++ {
+		offset := 2*1024*1024 + i
+		if partialBuf[i] != byte(offset%256) {
+			t.Fatalf("Partial data mismatch at offset %d: got %d, want %d", i, partialBuf[i], byte(offset%256))
+		}
+	}
+	
+	t.Logf("Write and read test passed: wrote and read %d bytes successfully", len(data))
+}
+
+func TestWriteAndReadSmallFile(t *testing.T) {
+	ctx := context.Background()
+	
+	attr := &meta.Attr{
+		Ino:    456,
+		Size:   0,
+		Chunks: []string{},
+	}
+	
+	mockTransport := &mockTransport{chunks: make(map[string][]byte)}
+	store := &ChunkStore{
+		transport:     mockTransport,
+		replicaFactor: 1,
+		nodes:         []string{"mock://localhost"},
+	}
+	
+	// Test small file (1 KiB)
+	data := make([]byte, 1024)
+	for i := range data {
+		data[i] = byte(i)
+	}
+	
+	if err := store.Write(ctx, attr, data, 0); err != nil {
+		t.Fatalf("Write small file failed: %v", err)
+	}
+	
+	if err := store.FlushFile(ctx, attr.Ino); err != nil {
+		t.Fatalf("FlushFile failed: %v", err)
+	}
+	
+	readBuf := make([]byte, len(data))
+	n, err := store.Read(ctx, attr, readBuf, 0)
+	if err != nil {
+		t.Fatalf("Read small file failed: %v", err)
+	}
+	
+	if n != len(data) {
+		t.Fatalf("Read length mismatch: got %d, want %d", n, len(data))
+	}
+	
+	for i := 0; i < len(data); i++ {
+		if readBuf[i] != data[i] {
+			t.Fatalf("Data mismatch at offset %d: got %d, want %d", i, readBuf[i], data[i])
+		}
+	}
+	
+	t.Logf("Small file test passed: %d bytes", len(data))
+}
+
+// mockTransport is a simple in-memory transport for testing
+type mockTransport struct {
+	chunks map[string][]byte
+	mu     sync.Mutex
+}
+
+func (m *mockTransport) Kind() transport.Kind {
+	return transport.KindHTTP
+}
+
+func (m *mockTransport) PutChunk(ctx context.Context, nodeURL, chunkID string, data []byte) error {
+	return m.PutChunkWithOptions(ctx, nodeURL, chunkID, data, transport.ChunkWriteOptions{})
+}
+
+func (m *mockTransport) PutChunkReplica(ctx context.Context, nodeURL, chunkID string, data []byte) error {
+	return m.PutChunkWithOptions(ctx, nodeURL, chunkID, data, transport.ChunkWriteOptions{Replica: true})
+}
+
+func (m *mockTransport) PutChunkWithOptions(ctx context.Context, nodeURL, chunkID string, data []byte, opts transport.ChunkWriteOptions) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.chunks[chunkID] = append([]byte(nil), data...)
+	return nil
+}
+
+func (m *mockTransport) GetChunk(ctx context.Context, nodeURL, chunkID string) ([]byte, error) {
+	return m.GetChunkWithOptions(ctx, nodeURL, chunkID, transport.ChunkReadOptions{})
+}
+
+func (m *mockTransport) GetChunkWithOptions(ctx context.Context, nodeURL, chunkID string, opts transport.ChunkReadOptions) ([]byte, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if data, ok := m.chunks[chunkID]; ok {
+		return append([]byte(nil), data...), nil
+	}
+	return nil, errors.New("chunk not found")
+}
+
+func (m *mockTransport) DeleteChunk(ctx context.Context, nodeURL, chunkID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.chunks, chunkID)
+	return nil
 }
 
 type fakeMeta struct {
