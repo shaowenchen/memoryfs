@@ -20,6 +20,7 @@ Usage:
 
 Commands:
   node       run a memoryfs node (Raft + chunk store + HTTP/gRPC API)
+  node-env   run "node" with flags derived from MEMORYFS_* env vars (K8s entry)
   mount      mount the filesystem via FUSE
   status     print cluster status
   benchmark  run a chunk read/write throughput test
@@ -45,6 +46,8 @@ func main() {
 	switch cmd {
 	case "node":
 		runNode(args)
+	case "node-env":
+		runNodeEnv(args)
 	case "mount":
 		runMount(args)
 	case "status":

@@ -22,10 +22,8 @@ RUN apt-get update && \
 
 WORKDIR /app
 COPY --from=builder /workspace/bin/memoryfs /app/memoryfs
-COPY scripts/entrypoint.sh /app/entrypoint.sh
-COPY deploy/scripts/node-start.sh /app/scripts/node-start.sh
-RUN ln -s /app/memoryfs /usr/local/bin/memoryfs && \
-    chmod +x /app/entrypoint.sh /app/memoryfs /app/scripts/node-start.sh
+RUN chmod +x /app/memoryfs && \
+    ln -s /app/memoryfs /usr/local/bin/memoryfs
 
-ENTRYPOINT ["/app/entrypoint.sh"]
+ENTRYPOINT ["/app/memoryfs"]
 CMD ["node", "-standalone", "-id", "n1", "-http", ":19800", "-data", "/data"]

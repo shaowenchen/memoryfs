@@ -36,8 +36,8 @@ go test ./... -count=1
 ## 部署相关
 
 - Chart：`deploy/helm/memoryfs/`
-- 节点脚本：`deploy/scripts/node-start.sh`
-- Mount 脚本：`deploy/scripts/mount-start.sh`
+- 节点入口：`memoryfs node-env`（从 `MEMORYFS_*` 环境变量启动 node）
+- Mount 入口：`memoryfs mount`（支持 `MEMORYFS_MOUNT_POINT` / `MEMORYFS_NODES` 等 env 默认值）
 - 文档：`deploy/README.md`、`docs/reference/`
 
 ## 日志

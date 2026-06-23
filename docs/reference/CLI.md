@@ -4,13 +4,15 @@
 
 ```bash
 memoryfs node [flags]       # 存储节点
-memoryfs node-env           # 从 MEMORYFS_* 环境变量启动（K8s 入口）
+memoryfs node-env           # 从 MEMORYFS_* 环境变量启动 node（K8s 入口）
 memoryfs mount [flags]      # FUSE 客户端
 memoryfs status [flags]     # 集群状态
 memoryfs benchmark [flags]  # 性能测试
 memoryfs config show|path|clear  # 查看 / 清除已保存的连接信息
 memoryfs version            # 版本信息
 ```
+
+容器 `ENTRYPOINT=/app/memoryfs`，K8s 直接 `args: [node-env]` / `args: [mount, ...]` 即可，无需 shell wrapper。
 
 ## 共享连接配置
 

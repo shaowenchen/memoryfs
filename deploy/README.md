@@ -318,7 +318,7 @@ helm upgrade memoryfs "${CHART}" -n memoryfs --set dashboard.uriPrefix=
 | `MEMORYFS_URI_PREFIX` | HTTP 路径前缀（如 `/memoryfs`） |
 | `MEMORYFS_API_TOKEN` | API Bearer Token |
 
-完整列表见 `deploy/scripts/node-start.sh`。
+完整列表见 `cmd/memoryfs/node_env.go` 顶部注释。
 
 ---
 

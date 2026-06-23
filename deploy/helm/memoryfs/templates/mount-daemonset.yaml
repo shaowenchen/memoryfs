@@ -32,7 +32,7 @@ spec:
             privileged: true
             capabilities:
               add: ["SYS_ADMIN"]
-          command:
+          args:
             - mount
             - -mount
             - {{ .Values.mount.mountPath | quote }}

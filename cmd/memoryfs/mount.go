@@ -30,10 +30,10 @@ func runMount(args []string) {
 	log.SetFlags(log.Ldate | log.Ltime | log.Lmicroseconds)
 
 	flagSet := flag.NewFlagSet("mount", flag.ExitOnError)
-	mountPoint := flagSet.String("mount", "", "mount point (required)")
-	nodes := flagSet.String("nodes", envOr("MEMORYFS_NODES", ""), "comma-separated node HTTP URLs (required)")
+	mountPoint := flagSet.String("mount", envOr("MEMORYFS_MOUNT_POINT", ""), "mount point (required, env MEMORYFS_MOUNT_POINT)")
+	nodes := flagSet.String("nodes", envOr("MEMORYFS_NODES", ""), "comma-separated node HTTP URLs (required, env MEMORYFS_NODES)")
 	apiToken := flagSet.String("api-token", envOr("MEMORYFS_API_TOKEN", ""), "optional API bearer token")
-	foreground := flagSet.Bool("f", false, "run in foreground")
+	foreground := flagSet.Bool("f", envBool("MEMORYFS_MOUNT_FOREGROUND"), "run in foreground (env MEMORYFS_MOUNT_FOREGROUND)")
 	debug := flagSet.Bool("debug", false, "enable fuse debug")
 	verbose := flagSet.Bool("v", false, "verbose: log I/O operations and periodic heartbeats")
 	_ = flagSet.Parse(args)

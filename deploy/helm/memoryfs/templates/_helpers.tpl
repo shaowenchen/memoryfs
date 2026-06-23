@@ -109,11 +109,6 @@ memory
 {{- end -}}
 {{- end }}
 
-{{- define "memoryfs.bootstrapJoinScript" -}}
-export MEMORYFS_HEADLESS_SERVICE="{{ include "memoryfs.headless" . }}"
-exec /app/entrypoint.sh node-env
-{{- end }}
-
 {{- define "memoryfs.nodeURLs" -}}
 {{- $fullname := include "memoryfs.fullname" . -}}
 {{- $headless := include "memoryfs.headless" . -}}
