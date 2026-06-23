@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/shaowenchen/memoryfs/pkg/chunk"
@@ -44,6 +45,24 @@ const chainPropagationConcurrency = 32
 type Service struct {
 	cfg          Config
 	chainSlots   chan struct{}
+	metaMu       sync.Mutex
+	chunkMeta    map[string]chunk.ChunkMeta
+	idemMu       sync.Mutex
+	idemState    map[string]idempotencyState
+	lockMu       sync.Mutex
+	lockByChunk  map[string]*sync.Mutex
+	stateMu      sync.Mutex
+	chainStates  map[uint32]chunk.PublicTargetState
+	chainVers    map[uint32]uint64
+	syncingChain map[uint32]bool
+}
+
+type idempotencyState struct {
+	ChainVer  uint64
+	UpdateVer uint64
+	CommitVer uint64
+	Err       string
+	At        time.Time
 }
 
 // New creates a service instance.
@@ -63,6 +82,12 @@ func New(cfg Config) *Service {
 	return &Service{
 		cfg:        cfg,
 		chainSlots: make(chan struct{}, chainPropagationConcurrency),
+		chunkMeta:  make(map[string]chunk.ChunkMeta),
+		idemState:  make(map[string]idempotencyState),
+		lockByChunk: make(map[string]*sync.Mutex),
+		chainStates: make(map[uint32]chunk.PublicTargetState),
+		chainVers: make(map[uint32]uint64),
+		syncingChain: make(map[uint32]bool),
 	}
 }
 
@@ -108,6 +133,7 @@ func (s *Service) Join(ctx context.Context, id, raftAddr, httpAddr, grpcAddr, rd
 		return nil, err
 	}
 	s.syncClusterEpoch()
+	s.recomputeChainStates(ctx)
 	return memberHTTPURLs(members), nil
 }
 
@@ -130,6 +156,7 @@ func (s *Service) RemoveNode(ctx context.Context, id string) error {
 		return err
 	}
 	s.syncClusterEpoch()
+	s.recomputeChainStates(ctx)
 	return nil
 }
 
@@ -178,27 +205,9 @@ func (s *Service) GetChunkRegistry(_ context.Context, chunkID string) (*chunk.Lo
 	return s.cfg.Registry.Get(chunkID)
 }
 
-// StoreChunkLocal writes chunk to local disk/memory and continues chain
-// propagation to the next target if one exists. Called on MIDDLE/TAIL when an
-// upstream node forwards data (replica=1 path).
-func (s *Service) StoreChunkLocal(chunkID string, data []byte) error {
-	if err := s.cfg.Chunks.Put(chunkID, data); err != nil {
-		return err
-	}
-	nodes, err := s.cfg.Meta.ListNodes(context.Background())
-	if err != nil || len(nodes) == 0 {
-		return nil
-	}
-	chain, err := chunk.ChainFor(nodes, chunkID, s.cfg.ReplicaFactor)
-	if err != nil {
-		return nil
-	}
-	next, ok := chain.NextOf(s.cfg.NodeHTTP)
-	if !ok {
-		return nil
-	}
-	go s.propagateAlongChain(chunkID, data, next, chain)
-	return nil
+// StoreChunkLocal applies a CRAQ replica write from a predecessor target.
+func (s *Service) StoreChunkLocal(ctx context.Context, chunkID string, data []byte, req ReplicaWrite) error {
+	return s.applyReplicaWrite(ctx, chunkID, data, req)
 }
 
 // PutChunk stores a chunk locally and replicates to all peer replicas.
@@ -206,9 +215,8 @@ func (s *Service) PutChunk(ctx context.Context, chunkID string, data []byte) ([]
 	return s.putChunk(ctx, chunkID, data, true)
 }
 
-// putChunk implements chain replication: the entry node (HEAD or any target
-// reached by fallback) stores locally then asynchronously forwards to the next
-// target in the chain. Writes return as soon as ONE replica is durable.
+// putChunk implements strict CRAQ: only HEAD accepts client writes, then
+// synchronously forwards along the chain and commits on ACK.
 func (s *Service) putChunk(ctx context.Context, chunkID string, data []byte, replicatePeers bool) ([]string, error) {
 	if !s.cfg.Lifecycle.AcceptsChunks() {
 		return nil, fmt.Errorf("node is draining")
@@ -228,28 +236,22 @@ func (s *Service) putChunk(ctx context.Context, chunkID string, data []byte, rep
 	}
 	replicas := chain.NodeURLs()
 
-	// Always store locally (we are the chain entry node).
-	if err := s.cfg.Chunks.Put(chunkID, data); err != nil {
+	head := chain.Head().NodeURL
+	if head != s.cfg.NodeHTTP {
+		return nil, fmt.Errorf("routing error: node %s is not chain head %s", s.cfg.NodeHTTP, head)
+	}
+	req := ReplicaWrite{
+		Stage:      stagePrepare,
+		ChainID:    chain.ID,
+		ChainVer:   s.chainVersion(chain.ID),
+		Replicas:   replicas,
+		FromClient: true,
+	}
+	if err := s.applyReplicaWrite(ctx, chunkID, data, req); err != nil {
 		return nil, err
 	}
-	log.Printf("putChunk %s bytes=%d chain=%d entry=%s targets=%v", chunkID, len(data), chain.ID, s.cfg.NodeHTTP, replicas)
-
+	log.Printf("putChunk %s bytes=%d chain=%d head=%s targets=%v strict=true", chunkID, len(data), chain.ID, s.cfg.NodeHTTP, replicas)
 	if replicatePeers {
-		// Find next target in chain after us; if we are not in the chain (mount
-		// fell back to a non-target node), forward to HEAD instead.
-		var next chunk.Target
-		var ok bool
-		if chain.Contains(s.cfg.NodeHTTP) {
-			next, ok = chain.NextOf(s.cfg.NodeHTTP)
-		} else {
-			next = chain.Head()
-			ok = true
-		}
-		if ok {
-			go s.propagateAlongChain(chunkID, data, next, chain)
-		}
-		// Registry update is deferred to the repair loop — chain propagation is
-		// authoritative; registry just records the chain targets for reads.
 		if err := s.RecordChunkRegistry(context.Background(), chunkID, replicas); err != nil {
 			log.Printf("putChunk %s registry deferred: %v", chunkID, err)
 			s.enqueueRepair(chunkID, replicas)
@@ -282,6 +284,21 @@ func (s *Service) propagateAlongChain(chunkID string, data []byte, next chunk.Ta
 
 // GetChunk reads a chunk from local storage only.
 func (s *Service) GetChunk(ctx context.Context, chunkID string) ([]byte, error) {
+	meta := s.getMeta(chunkID)
+	if !meta.Committed() && meta.UpdateVer != 0 {
+		return nil, fmt.Errorf("chunk not committed")
+	}
+	if data, ok := s.cfg.Chunks.Get(chunkID); ok {
+		return data, nil
+	}
+	return nil, fmt.Errorf("chunk not found")
+}
+
+// GetChunkWithVisibility reads a chunk with optional relaxed visibility.
+func (s *Service) GetChunkWithVisibility(ctx context.Context, chunkID string, allowUncommitted bool) ([]byte, error) {
+	if !allowUncommitted {
+		return s.GetChunk(ctx, chunkID)
+	}
 	if data, ok := s.cfg.Chunks.Get(chunkID); ok {
 		return data, nil
 	}
@@ -290,7 +307,39 @@ func (s *Service) GetChunk(ctx context.Context, chunkID string) ([]byte, error) 
 
 // DeleteChunk removes a chunk locally and from registry.
 func (s *Service) DeleteChunk(ctx context.Context, chunkID string) error {
-	_ = s.cfg.Chunks.Delete(chunkID)
+	nodes, err := s.cfg.Meta.ListNodes(ctx)
+	if err != nil || len(nodes) == 0 {
+		meta := s.getMeta(chunkID)
+		nextVer := meta.UpdateVer + 1
+		_ = s.cfg.Chunks.Delete(chunkID)
+		s.setMeta(chunk.ChunkMeta{
+			ChunkID:   chunkID,
+			ChainID:   meta.ChainID,
+			ChainVer:  s.syncClusterEpoch(),
+			UpdateVer: nextVer,
+			CommitVer: nextVer,
+			State:     chunk.ChunkStateCommitted,
+			UpdatedAt: time.Now(),
+		})
+		return s.DeleteChunkRegistry(ctx, chunkID)
+	}
+	chain, err := chunk.ChainFor(nodes, chunkID, s.cfg.ReplicaFactor)
+	if err != nil {
+		return err
+	}
+	head := chain.Head().NodeURL
+	if head != s.cfg.NodeHTTP {
+		return fmt.Errorf("routing error: node %s is not chain head %s", s.cfg.NodeHTTP, head)
+	}
+	if err := s.applyReplicaWrite(ctx, chunkID, nil, ReplicaWrite{
+		Stage:      stageRemove,
+		ChainID:    chain.ID,
+		ChainVer:   s.chainVersion(chain.ID),
+		Replicas:   chain.NodeURLs(),
+		FromClient: true,
+	}); err != nil {
+		return err
+	}
 	return s.DeleteChunkRegistry(ctx, chunkID)
 }
 
@@ -357,6 +406,7 @@ func (s *Service) Drain(ctx context.Context, force bool) (remaining int, drained
 // Ready marks node active and rebuilds missing chunks from peers.
 func (s *Service) Ready(ctx context.Context) {
 	s.cfg.Lifecycle.Ready()
+	s.recomputeChainStates(ctx)
 	n, err := s.Rebuild(ctx)
 	if err != nil {
 		log.Printf("rebuild warning: %v", err)
@@ -368,6 +418,7 @@ func (s *Service) Ready(ctx context.Context) {
 // Health returns node health info.
 func (s *Service) Health() (status, state, role string, epoch uint64, pending int) {
 	epoch = s.syncClusterEpoch()
+	s.recomputeChainStates(context.Background())
 	role = "follower"
 	if s.IsLeader() {
 		role = "leader"

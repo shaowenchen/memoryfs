@@ -169,6 +169,17 @@ func (c *ChunkStore) writeTargetsForChunk(chunkID string) []string {
 	return cluster
 }
 
+// readTargetsForChunk prefers TAIL-first reads for committed visibility, then
+// falls back toward HEAD.
+func (c *ChunkStore) readTargetsForChunk(ctx context.Context, chunkID string) []string {
+	nodes := c.nodesForChunk(ctx, chunkID)
+	out := append([]string(nil), nodes...)
+	for i, j := 0, len(out)-1; i < j; i, j = i+1, j-1 {
+		out[i], out[j] = out[j], out[i]
+	}
+	return out
+}
+
 // Read reads up to len(dest) bytes at offset from a file identified by attr.
 func (c *ChunkStore) Read(ctx context.Context, attr *meta.Attr, dest []byte, offset int64) (int, error) {
 	if offset >= int64(attr.Size) {
@@ -319,13 +330,13 @@ func (c *ChunkStore) deleteBlocksFrom(ctx context.Context, ino uint64, newSize, 
 func (c *ChunkStore) readChunk(ctx context.Context, chunkID string) ([]byte, error) {
 	ioCtx, cancel := DetachIOContext(ctx)
 	defer cancel()
-	nodes := c.nodesForChunk(ioCtx, chunkID)
+	nodes := c.readTargetsForChunk(ioCtx, chunkID)
 	if len(nodes) == 0 {
 		return nil, ErrNoNodes
 	}
 	var last error
 	for _, node := range nodes {
-		data, err := c.transport.GetChunk(ioCtx, node, chunkID)
+		data, err := c.transport.GetChunkWithOptions(ioCtx, node, chunkID, transport.ChunkReadOptions{})
 		if err == nil {
 			mountlog.Debugf("chunk %s GET ok node=%s bytes=%d", chunkID, node, len(data))
 			return data, nil
@@ -348,18 +359,18 @@ func (c *ChunkStore) writeChunk(ctx context.Context, chunkID string, data []byte
 	if len(targets) == 0 {
 		return ErrNoNodes
 	}
-	var last error
-	for _, node := range targets {
-		if err := c.transport.PutChunk(ioCtx, node, chunkID, data); err == nil {
-			mountlog.Infof("chunk %s PUT ok entry=%s bytes=%d", chunkID, node, len(data))
-			return nil
-		} else {
-			mountlog.Warnf("chunk %s PUT failed entry=%s: %v", chunkID, node, err)
-			last = err
-		}
+	head := targets[0]
+	if err := c.transport.PutChunkWithOptions(ioCtx, head, chunkID, data, transport.ChunkWriteOptions{
+		FromClient: true,
+		Stage:      "prepare",
+		Replicas:   targets,
+	}); err == nil {
+		mountlog.Infof("chunk %s PUT ok head=%s bytes=%d", chunkID, head, len(data))
+		return nil
+	} else {
+		mountlog.Warnf("chunk %s PUT failed head=%s: %v", chunkID, head, err)
+		return err
 	}
-	mountlog.Errorf("chunk %s PUT all chain targets failed: %v", chunkID, last)
-	return last
 }
 
 // deleteChunk removes the chunk from ALL chain targets in parallel so a single

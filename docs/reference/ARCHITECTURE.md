@@ -77,7 +77,7 @@ StatefulSet 有序启动时的成员模型：
 
 ### Chain Replication
 
-副本同步采用 **Chain Replication**：写入只需要 HEAD 落盘即返回，HEAD 异步沿链向下传播到 TAIL。
+副本同步采用 **Strict CRAQ（Chain Replication）**：写入必须沿链完成传播并提交，才向客户端返回成功。
 
 ```
 ChainTable
@@ -115,15 +115,30 @@ chainID = fnv1a(chunkID) % len(ChainTable.Chains)
 ```
 mount ──PUT /chunks/{id}──► HEAD
                               │
-                              ├─ 1) Chunks.Put(id, data)        本地落盘
-                              ├─ 2) 立即返回 201                ← 写请求结束
-                              └─ 3) goroutine ──replica=1──► MIDDLE ──replica=1──► TAIL
+                              ├─ 1) PREPARE: HEAD 本地写入 pending
+                              ├─ 2) 同步转发: HEAD ──replica=1──► MIDDLE ──replica=1──► TAIL
+                              ├─ 3) ACK 回传后各节点 COMMIT
+                              └─ 4) HEAD 返回 201                ← 写请求结束
 ```
 
-- HEAD 本地写完**立即返回**，不等下游确认
-- 沿链转发：HEAD→MIDDLE→TAIL，每跳带 `replica=1` 标记
-- 转发失败 → 入 `RepairQueue` 后台重试
-- HEAD 不可达 → mount 顺序 fallback 到 Chain 下一个 Target，该 Target 成为新入口
+- 只有 **HEAD** 接受客户端写入；非 HEAD 返回路由错误
+- 链路阶段包含 `stage/chain_ver/update_ver/replicas` 元数据
+- 默认读为 read-committed；未提交版本返回冲突并重试
+- 失败恢复由 repair/resync 驱动，不再采用客户端 fan-out 的“成功即返回”语义
+
+#### Target 状态机（3fs 风格）
+
+- `serving`：正常提供读写
+- `syncing`：正在接收前驱同步数据，不对外读
+- `waiting`：等待进入同步阶段（如 draining/拓扑切换）
+- `offline`：不可用
+- `lastsrv`：保留态，表示链上最后可服务副本（当前用于兼容状态对齐）
+
+控制面 API：
+
+- `POST /v1/chains/sync/start`：切换到 `syncing` 并返回本地 chunk 元数据
+- `POST /v1/chains/sync/done`：同步完成，切回 `serving`
+- `POST /v1/chains/state`：查询本节点链状态
 
 #### 读路径
 
@@ -168,9 +183,10 @@ dd / app
       ├─ block 写满或 fsync/close → PUT /chunks/{id}
       └─ 元数据更新 attr.Size / attr.Chunks（fsync/close 时一次 commit）
   → Chain HEAD（按 chunkID hash 到 chain）
-      ├─ 本地落盘
-      ├─ 立即 201 OK ← 写返回
-      └─ 异步 chain 转发 → MIDDLE → TAIL
+      ├─ 本地 pending 写入
+      ├─ 同步 chain 转发（HEAD→MIDDLE→TAIL）
+      ├─ commit ack 回传后本地 commit
+      └─ 返回 201 OK ← 写返回
 ```
 
 **Node 启动**：分配 chunk 内存配额（`storageGB`），实际 RSS 随数据量增长（按 chunk 大小 exact-size 分配）。

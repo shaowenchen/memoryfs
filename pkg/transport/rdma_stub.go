@@ -34,11 +34,25 @@ func (t *RDMATransport) PutChunkReplica(ctx context.Context, nodeURL, chunkID st
 	return t.fallback.PutChunkReplica(ctx, nodeURL, chunkID, data)
 }
 
+func (t *RDMATransport) PutChunkWithOptions(ctx context.Context, nodeURL, chunkID string, data []byte, opts ChunkWriteOptions) error {
+	if t.fallback == nil {
+		return fmt.Errorf("rdma not enabled")
+	}
+	return t.fallback.PutChunkWithOptions(ctx, nodeURL, chunkID, data, opts)
+}
+
 func (t *RDMATransport) GetChunk(ctx context.Context, nodeURL, chunkID string) ([]byte, error) {
 	if t.fallback == nil {
 		return nil, fmt.Errorf("rdma not enabled: rebuild with -tags rdma or use grpc/http")
 	}
 	return t.fallback.GetChunk(ctx, nodeURL, chunkID)
+}
+
+func (t *RDMATransport) GetChunkWithOptions(ctx context.Context, nodeURL, chunkID string, opts ChunkReadOptions) ([]byte, error) {
+	if t.fallback == nil {
+		return nil, fmt.Errorf("rdma not enabled: rebuild with -tags rdma or use grpc/http")
+	}
+	return t.fallback.GetChunkWithOptions(ctx, nodeURL, chunkID, opts)
 }
 
 func (t *RDMATransport) DeleteChunk(ctx context.Context, nodeURL, chunkID string) error {

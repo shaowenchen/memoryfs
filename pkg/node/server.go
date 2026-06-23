@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -66,6 +67,9 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/v1/chunks/registry/set", s.handleWrite(s.registrySet))
 	s.mux.HandleFunc("/v1/chunks/registry/delete", s.handleWrite(s.registryDelete))
 	s.mux.HandleFunc("/v1/chunks/registry/get", s.handleFS(s.registryGet))
+	s.mux.HandleFunc("/v1/chains/state", s.handleFS(s.chainState))
+	s.mux.HandleFunc("/v1/chains/sync/start", s.handleFS(s.chainSyncStart))
+	s.mux.HandleFunc("/v1/chains/sync/done", s.handleFS(s.chainSyncDone))
 	s.mux.HandleFunc("/v1/fs/getattr", s.handleFS(s.getattr))
 	s.mux.HandleFunc("/v1/fs/lookup", s.handleFS(s.lookup))
 	s.mux.HandleFunc("/v1/fs/readdir", s.handleFS(s.readdir))
@@ -111,6 +115,8 @@ type fsRequest struct {
 	FileSize  uint64     `json:"file_size,omitempty"`
 	Replicas  []string   `json:"replicas,omitempty"`
 	Epoch     uint64     `json:"epoch,omitempty"`
+	ChainID   uint32     `json:"chain_id,omitempty"`
+	ChainVer  uint64     `json:"chain_ver,omitempty"`
 }
 
 type fsResponse struct {
@@ -134,6 +140,8 @@ type fsResponse struct {
 	RepairPending    int                   `json:"repair_pending,omitempty"`
 	Replicas         []string              `json:"replicas,omitempty"`
 	ChunkID          string                `json:"chunk_id,omitempty"`
+	ChainState       *service.ChainState   `json:"chain_state,omitempty"`
+	SyncStart        *service.SyncStartResponse `json:"sync_start,omitempty"`
 }
 
 type joinRequest struct {
@@ -441,6 +449,26 @@ func (s *Server) registryDelete(ctx context.Context, req fsRequest) (fsResponse,
 	return fsResponse{}, http.StatusOK
 }
 
+func (s *Server) chainState(ctx context.Context, req fsRequest) (fsResponse, int) {
+	st := s.svc.GetChainState(ctx, req.ChainID)
+	return fsResponse{ChainState: &st}, http.StatusOK
+}
+
+func (s *Server) chainSyncStart(ctx context.Context, req fsRequest) (fsResponse, int) {
+	resp, err := s.svc.SyncStart(ctx, req.ChainID, req.ChainVer)
+	if err != nil {
+		return fsResponse{Error: err.Error()}, http.StatusInternalServerError
+	}
+	return fsResponse{SyncStart: &resp}, http.StatusOK
+}
+
+func (s *Server) chainSyncDone(ctx context.Context, req fsRequest) (fsResponse, int) {
+	if err := s.svc.SyncDone(ctx, req.ChainID, req.ChainVer); err != nil {
+		return fsResponse{Error: err.Error()}, http.StatusInternalServerError
+	}
+	return fsResponse{}, http.StatusOK
+}
+
 const chunkBodyLimit = 16 << 20
 
 // readChunkBody reads a PUT chunk body. Uses Content-Length when available to
@@ -466,8 +494,13 @@ func (s *Server) handleChunks(w http.ResponseWriter, r *http.Request) {
 	}
 	switch r.Method {
 	case http.MethodGet:
-		data, err := s.svc.GetChunk(r.Context(), id)
+		allowUncommitted := r.URL.Query().Get("allow_uncommitted") == "1"
+		data, err := s.svc.GetChunkWithVisibility(r.Context(), id, allowUncommitted)
 		if err != nil {
+			if strings.Contains(err.Error(), "not committed") {
+				http.Error(w, err.Error(), http.StatusConflict)
+				return
+			}
 			http.NotFound(w, r)
 			return
 		}
@@ -487,7 +520,12 @@ func (s *Server) handleChunks(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if r.URL.Query().Get("replica") == "1" {
-			if err := s.svc.StoreChunkLocal(id, data); err != nil {
+			req, err := parseReplicaWriteRequest(r.URL.Query())
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			if err := s.svc.StoreChunkLocal(r.Context(), id, data, req); err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
@@ -502,6 +540,62 @@ func (s *Server) handleChunks(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+func parseReplicaWriteRequest(values url.Values) (service.ReplicaWrite, error) {
+	var req service.ReplicaWrite
+	req.Stage = values.Get("stage")
+	if req.Stage == "" {
+		req.Stage = "prepare"
+	}
+	if raw := values.Get("chain_id"); raw != "" {
+		v, err := strconv.ParseUint(raw, 10, 32)
+		if err != nil {
+			return req, fmt.Errorf("invalid chain_id: %w", err)
+		}
+		req.ChainID = uint32(v)
+	}
+	if raw := values.Get("chain_ver"); raw != "" {
+		v, err := strconv.ParseUint(raw, 10, 64)
+		if err != nil {
+			return req, fmt.Errorf("invalid chain_ver: %w", err)
+		}
+		req.ChainVer = v
+	}
+	if raw := values.Get("update_ver"); raw != "" {
+		v, err := strconv.ParseUint(raw, 10, 64)
+		if err != nil {
+			return req, fmt.Errorf("invalid update_ver: %w", err)
+		}
+		req.UpdateVer = v
+	}
+	if raw := values.Get("commit_ver"); raw != "" {
+		v, err := strconv.ParseUint(raw, 10, 64)
+		if err != nil {
+			return req, fmt.Errorf("invalid commit_ver: %w", err)
+		}
+		req.CommitVer = v
+	}
+	req.FromClient = values.Get("from_client") == "1"
+	req.Syncing = values.Get("syncing") == "1"
+	req.Replicas = parseReplicasCSV(values.Get("replicas"))
+	return req, nil
+}
+
+func parseReplicasCSV(raw string) []string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 func decodeJSON(r *http.Request, v any) error {

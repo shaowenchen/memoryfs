@@ -30,6 +30,13 @@ func NewRDMATransport(fallback ChunkTransport) *RDMATransport {
 func (t *RDMATransport) Kind() Kind { return KindRDMA }
 
 func (t *RDMATransport) PutChunk(ctx context.Context, nodeURL, chunkID string, data []byte) error {
+	return t.PutChunkWithOptions(ctx, nodeURL, chunkID, data, ChunkWriteOptions{})
+}
+
+func (t *RDMATransport) PutChunkWithOptions(ctx context.Context, nodeURL, chunkID string, data []byte, opts ChunkWriteOptions) error {
+	if opts.Replica || opts.Stage != "" || opts.ChainID != 0 || opts.ChainVer != 0 || opts.UpdateVer != 0 || opts.CommitVer != 0 || len(opts.Replicas) > 0 || opts.FromClient || opts.Syncing {
+		return t.fallback.PutChunkWithOptions(ctx, nodeURL, chunkID, data, opts)
+	}
 	if RDMAAvailable() {
 		if err := t.rdmaPut(normalizeRDMAFromNodeURL(nodeURL), chunkID, data); err == nil {
 			return nil
@@ -39,6 +46,13 @@ func (t *RDMATransport) PutChunk(ctx context.Context, nodeURL, chunkID string, d
 }
 
 func (t *RDMATransport) GetChunk(ctx context.Context, nodeURL, chunkID string) ([]byte, error) {
+	return t.GetChunkWithOptions(ctx, nodeURL, chunkID, ChunkReadOptions{})
+}
+
+func (t *RDMATransport) GetChunkWithOptions(ctx context.Context, nodeURL, chunkID string, opts ChunkReadOptions) ([]byte, error) {
+	if opts.AllowUncommitted {
+		return t.fallback.GetChunkWithOptions(ctx, nodeURL, chunkID, opts)
+	}
 	if RDMAAvailable() {
 		if data, err := t.rdmaGet(normalizeRDMAFromNodeURL(nodeURL), chunkID); err == nil {
 			return data, nil

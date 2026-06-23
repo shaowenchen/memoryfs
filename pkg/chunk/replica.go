@@ -17,6 +17,11 @@ type Location struct {
 	ChunkID  string   `json:"chunk_id"`
 	Replicas []string `json:"replicas"`
 	Epoch    uint64   `json:"epoch"`
+	ChainID  uint32   `json:"chain_id,omitempty"`
+	ChainVer uint64   `json:"chain_ver,omitempty"`
+	UpdateVer uint64  `json:"update_ver,omitempty"`
+	CommitVer uint64  `json:"commit_ver,omitempty"`
+	State    string   `json:"state,omitempty"`
 }
 
 // Registry tracks chunk replica locations in KV.
@@ -34,14 +39,22 @@ func chunkLocKey(id string) string { return chunkLocPrefix + id }
 // Set stores replica locations for a chunk.
 func (r *Registry) Set(id string, replicas []string, epoch uint64) error {
 	loc := Location{ChunkID: id, Replicas: replicas, Epoch: epoch}
+	return r.SetLocation(loc)
+}
+
+// SetLocation stores full CRAQ-aware replica metadata for a chunk.
+func (r *Registry) SetLocation(loc Location) error {
+	if loc.ChunkID == "" {
+		return nil
+	}
 	data, err := json.Marshal(loc)
 	if err != nil {
 		return err
 	}
-	if err := r.kv.Set(chunkLocKey(id), data); err != nil {
+	if err := r.kv.Set(chunkLocKey(loc.ChunkID), data); err != nil {
 		return err
 	}
-	return r.kv.SAdd(chunkIndexKey, id)
+	return r.kv.SAdd(chunkIndexKey, loc.ChunkID)
 }
 
 // Get returns replica locations for a chunk.

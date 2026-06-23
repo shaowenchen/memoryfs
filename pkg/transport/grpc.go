@@ -49,12 +49,20 @@ func NewGRPCTransportWithHTTP(httpReplica *HTTPTransport) *GRPCTransport {
 func (t *GRPCTransport) Kind() Kind { return KindGRPC }
 
 func (t *GRPCTransport) PutChunk(ctx context.Context, nodeURL, chunkID string, data []byte) error {
-	return t.putChunk(ctx, nodeURL, chunkID, data)
+	return t.PutChunkWithOptions(ctx, nodeURL, chunkID, data, ChunkWriteOptions{})
 }
 
 func (t *GRPCTransport) PutChunkReplica(ctx context.Context, nodeURL, chunkID string, data []byte) error {
-	// replica writes use HTTP local-only path to avoid re-replication loops
-	return t.httpReplica.PutChunkReplica(ctx, nodeURL, chunkID, data)
+	return t.PutChunkWithOptions(ctx, nodeURL, chunkID, data, ChunkWriteOptions{Replica: true})
+}
+
+func (t *GRPCTransport) PutChunkWithOptions(ctx context.Context, nodeURL, chunkID string, data []byte, opts ChunkWriteOptions) error {
+	if opts.Replica || opts.Stage != "" || opts.ChainID != 0 || opts.ChainVer != 0 || opts.UpdateVer != 0 || opts.CommitVer != 0 || len(opts.Replicas) > 0 || opts.FromClient || opts.Syncing {
+		// gRPC API does not carry CRAQ metadata yet; use HTTP path that supports
+		// CRAQ query parameters for chain forwarding.
+		return t.httpReplica.PutChunkWithOptions(ctx, nodeURL, chunkID, data, opts)
+	}
+	return t.putChunk(ctx, nodeURL, chunkID, data)
 }
 
 func (t *GRPCTransport) putChunk(ctx context.Context, nodeURL, chunkID string, data []byte) error {
@@ -76,6 +84,13 @@ func (t *GRPCTransport) putChunk(ctx context.Context, nodeURL, chunkID string, d
 }
 
 func (t *GRPCTransport) GetChunk(ctx context.Context, nodeURL, chunkID string) ([]byte, error) {
+	return t.GetChunkWithOptions(ctx, nodeURL, chunkID, ChunkReadOptions{})
+}
+
+func (t *GRPCTransport) GetChunkWithOptions(ctx context.Context, nodeURL, chunkID string, opts ChunkReadOptions) ([]byte, error) {
+	if opts.AllowUncommitted {
+		return t.httpReplica.GetChunkWithOptions(ctx, nodeURL, chunkID, opts)
+	}
 	conn, err := t.dial(normalizeGRPC(nodeURL))
 	if err != nil {
 		return nil, err

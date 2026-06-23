@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log"
+
+	"github.com/shaowenchen/memoryfs/pkg/chunk"
 )
 
 // RunRepair processes pending replica repair jobs.
@@ -34,20 +36,29 @@ func (s *Service) repairChunk(ctx context.Context, chunkID string, replicas []st
 	}
 
 	selfInReplicas := chunkContains(replicas, s.cfg.NodeHTTP)
-	replicated := 0
-	for _, node := range replicas {
-		if node == s.cfg.NodeHTTP {
-			replicated++
-			continue
+	if selfInReplicas {
+		nodes, _ := s.cfg.Meta.ListNodes(ctx)
+		chainID := uint32(0)
+		chainVer := s.syncClusterEpoch()
+		if chain, err := chunk.ChainFor(nodes, chunkID, s.cfg.ReplicaFactor); err == nil {
+			chainID = chain.ID
+			chainVer = s.chainVersion(chainID)
 		}
-		if err := s.cfg.Transport.PutChunkReplica(ctx, node, chunkID, data); err != nil {
-			log.Printf("repair %s -> %s: %v", chunkID, node, err)
-			continue
+		if _, err := s.SyncStart(ctx, chainID, chainVer); err != nil {
+			return err
 		}
-		replicated++
-	}
-	if replicated < s.cfg.ReplicaFactor {
-		return fmt.Errorf("under-replicated (%d/%d)", replicated, s.cfg.ReplicaFactor)
+		defer func() {
+			_ = s.SyncDone(context.Background(), chainID, chainVer)
+		}()
+		if err := s.applyReplicaWrite(ctx, chunkID, data, ReplicaWrite{
+			Stage:    stagePrepare,
+			ChainID:  chainID,
+			ChainVer: chainVer,
+			Replicas: replicas,
+			Syncing:  true,
+		}); err != nil {
+			return err
+		}
 	}
 	if err := s.RecordChunkRegistry(ctx, chunkID, replicas); err != nil {
 		return err

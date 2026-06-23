@@ -27,6 +27,10 @@ func (t *recordingTransport) GetChunk(context.Context, string, string) ([]byte, 
 	return nil, ErrNoNodes
 }
 
+func (t *recordingTransport) GetChunkWithOptions(ctx context.Context, nodeURL, chunkID string, _ transport.ChunkReadOptions) ([]byte, error) {
+	return t.GetChunk(ctx, nodeURL, chunkID)
+}
+
 func (t *recordingTransport) PutChunk(_ context.Context, node, chunkID string, data []byte) error {
 	t.mu.Lock()
 	t.puts = append(t.puts, putCall{node: node, id: chunkID, n: len(data)})
@@ -35,6 +39,10 @@ func (t *recordingTransport) PutChunk(_ context.Context, node, chunkID string, d
 }
 
 func (t *recordingTransport) PutChunkReplica(ctx context.Context, node, chunkID string, data []byte) error {
+	return t.PutChunk(ctx, node, chunkID, data)
+}
+
+func (t *recordingTransport) PutChunkWithOptions(ctx context.Context, node, chunkID string, data []byte, _ transport.ChunkWriteOptions) error {
 	return t.PutChunk(ctx, node, chunkID, data)
 }
 
