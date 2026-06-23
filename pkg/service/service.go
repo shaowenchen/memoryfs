@@ -37,14 +37,9 @@ type Config struct {
 	Membership    *cluster.Membership
 }
 
-// chainPropagationConcurrency caps in-flight chain forward goroutines so a
-// burst of writes can't OOM the node with N × 4 MiB outstanding buffers.
-const chainPropagationConcurrency = 32
-
 // Service implements core MemoryFS node logic shared by HTTP and gRPC.
 type Service struct {
 	cfg          Config
-	chainSlots   chan struct{}
 	metaMu       sync.Mutex
 	chunkMeta    map[string]chunk.ChunkMeta
 	idemMu       sync.Mutex
@@ -81,7 +76,6 @@ func New(cfg Config) *Service {
 	}
 	return &Service{
 		cfg:        cfg,
-		chainSlots: make(chan struct{}, chainPropagationConcurrency),
 		chunkMeta:  make(map[string]chunk.ChunkMeta),
 		idemState:  make(map[string]idempotencyState),
 		lockByChunk: make(map[string]*sync.Mutex),
@@ -258,28 +252,6 @@ func (s *Service) putChunk(ctx context.Context, chunkID string, data []byte, rep
 		}
 	}
 	return replicas, nil
-}
-
-// propagateAlongChain forwards a chunk from self to the next target. The next
-// target will continue propagation. Runs in a background goroutine so the
-// originating write returns after the local store. A semaphore caps in-flight
-// goroutines to avoid OOM under write bursts.
-func (s *Service) propagateAlongChain(chunkID string, data []byte, next chunk.Target, chain *chunk.Chain) {
-	s.chainSlots <- struct{}{}
-	defer func() { <-s.chainSlots }()
-	defer func() {
-		if r := recover(); r != nil {
-			log.Printf("chain %d propagate %s -> %s panic: %v", chain.ID, chunkID, next.NodeURL, r)
-		}
-	}()
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	if err := s.cfg.Transport.PutChunkReplica(ctx, next.NodeURL, chunkID, data); err != nil {
-		log.Printf("chain %d propagate %s -> %s (%s): %v", chain.ID, chunkID, next.NodeURL, next.Role, err)
-		s.enqueueRepair(chunkID, chain.NodeURLs())
-		return
-	}
-	log.Printf("chain %d propagate %s -> %s (%s) ok", chain.ID, chunkID, next.NodeURL, next.Role)
 }
 
 // GetChunk reads a chunk from local storage only.
