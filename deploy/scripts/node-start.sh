@@ -122,4 +122,4 @@ set -- \
 [ -n "${API_TOKEN}" ] && set -- "$@" -api-token "${API_TOKEN}"
 [ -n "${URI_PREFIX}" ] && set -- "$@" -uri-prefix "${URI_PREFIX}"
 
-exec /app/node "$@"
+exec /app/memoryfs node "$@"

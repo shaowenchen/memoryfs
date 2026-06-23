@@ -21,10 +21,11 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/* /var/cache/apt/* /tmp/*
 
 WORKDIR /app
-COPY --from=builder /workspace/bin/node /workspace/bin/mount /workspace/bin/status /workspace/bin/benchmark /app/
+COPY --from=builder /workspace/bin/memoryfs /app/memoryfs
 COPY scripts/entrypoint.sh /app/entrypoint.sh
 COPY deploy/scripts/node-start.sh /app/scripts/node-start.sh
-RUN chmod +x /app/entrypoint.sh /app/node /app/mount /app/scripts/node-start.sh
+RUN ln -s /app/memoryfs /usr/local/bin/memoryfs && \
+    chmod +x /app/entrypoint.sh /app/memoryfs /app/scripts/node-start.sh
 
 ENTRYPOINT ["/app/entrypoint.sh"]
 CMD ["node", "-standalone", "-id", "n1", "-http", ":19800", "-data", "/data"]

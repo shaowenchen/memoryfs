@@ -15,25 +15,28 @@ import (
 	"github.com/hanwen/go-fuse/v2/fs"
 	"github.com/hanwen/go-fuse/v2/fuse"
 
-	"github.com/shaowenchen/memoryfs/pkg/ports"
-	"github.com/shaowenchen/memoryfs/pkg/cli"
-	"github.com/shaowenchen/memoryfs/pkg/client"
 	"github.com/shaowenchen/memoryfs/pkg/chunk"
+	"github.com/shaowenchen/memoryfs/pkg/cli"
+	"github.com/shaowenchen/memoryfs/pkg/cliconfig"
+	"github.com/shaowenchen/memoryfs/pkg/client"
 	"github.com/shaowenchen/memoryfs/pkg/fusefs"
 	"github.com/shaowenchen/memoryfs/pkg/mountlog"
+	"github.com/shaowenchen/memoryfs/pkg/ports"
 	"github.com/shaowenchen/memoryfs/pkg/service"
 	"github.com/shaowenchen/memoryfs/pkg/storage"
 )
 
-func main() {
+func runMount(args []string) {
 	log.SetFlags(log.Ldate | log.Ltime | log.Lmicroseconds)
 
-	mountPoint := flag.String("mount", "", "mount point (required)")
-	nodes := flag.String("nodes", envOr("MEMORYFS_NODES", ""), "comma-separated node HTTP URLs (required)")
-	foreground := flag.Bool("f", false, "run in foreground")
-	debug := flag.Bool("debug", false, "enable fuse debug")
-	verbose := flag.Bool("v", false, "verbose: log I/O operations and periodic heartbeats")
-	flag.Parse()
+	flagSet := flag.NewFlagSet("mount", flag.ExitOnError)
+	mountPoint := flagSet.String("mount", "", "mount point (required)")
+	nodes := flagSet.String("nodes", envOr("MEMORYFS_NODES", ""), "comma-separated node HTTP URLs (required)")
+	apiToken := flagSet.String("api-token", envOr("MEMORYFS_API_TOKEN", ""), "optional API bearer token")
+	foreground := flagSet.Bool("f", false, "run in foreground")
+	debug := flagSet.Bool("debug", false, "enable fuse debug")
+	verbose := flagSet.Bool("v", false, "verbose: log I/O operations and periodic heartbeats")
+	_ = flagSet.Parse(args)
 
 	mountlog.SetVerbose(*verbose)
 
@@ -59,7 +62,7 @@ func main() {
 	seed := strings.TrimRight(strings.TrimSpace(nodeList[0]), "/")
 	prefix := cli.NormalizePrefix(cli.DetectPrefix(context.Background(), seed, ""))
 	log.Printf("detected uri prefix=%q", prefix)
-	apiClient := cli.NewClient(seed, prefix, "")
+	apiClient := cli.NewClient(seed, prefix, *apiToken)
 
 	ov, err := apiClient.Overview(context.Background())
 	if err != nil {
@@ -141,6 +144,19 @@ func main() {
 	log.Printf("memoryfs mounted at %s (df -h %s)", *mountPoint, *mountPoint)
 	log.Printf("mount container must keep running; if it exits the host bind mount shows 'Transport endpoint is not connected'")
 
+	if err := cliconfig.Save(&cliconfig.Config{
+		Nodes:         nodeList,
+		URIPrefix:     prefix,
+		APIToken:      *apiToken,
+		MountPoint:    *mountPoint,
+		Leader:        ov.Leader,
+		ReplicaFactor: rf,
+	}); err != nil {
+		log.Printf("warning: persist cli config: %v", err)
+	} else {
+		log.Printf("cli config saved to %s (status/benchmark will reuse these nodes)", cliconfig.Path())
+	}
+
 	if *verbose {
 		go heartbeat(apiClient, chunks)
 	}
@@ -209,11 +225,4 @@ func prefixedLeaderURL(leader, prefix string) string {
 		return leader
 	}
 	return leader + prefix
-}
-
-func envOr(key, fallback string) string {
-	if v := strings.TrimSpace(os.Getenv(key)); v != "" {
-		return v
-	}
-	return fallback
 }

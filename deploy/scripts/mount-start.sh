@@ -16,4 +16,4 @@ if [ "${MEMORYFS_MOUNT_FOREGROUND}" = "true" ]; then
 fi
 
 echo "memoryfs mount-start: point=${MEMORYFS_MOUNT_POINT} nodes=${MEMORYFS_MOUNT_NODES}"
-exec /app/mount "${args[@]}"
+exec /app/memoryfs mount "${args[@]}"

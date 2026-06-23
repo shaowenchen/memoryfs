@@ -22,7 +22,7 @@ description: Use before claiming work is complete, fixed, or passing — require
 
 ```bash
 go test ./... -count=1
-go build -o /dev/null ./cmd/node ./cmd/mount
+go build -o /dev/null ./cmd/memoryfs
 # 若改 Helm：
 helm template deploy/helm/memoryfs > /dev/null
 ```

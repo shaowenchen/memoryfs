@@ -29,30 +29,31 @@ import (
 	"github.com/shaowenchen/memoryfs/pkg/transport"
 )
 
-func main() {
-	id := flag.String("id", "n1", "node id")
-	httpAddr := flag.String("http", ports.HTTPListen(), "HTTP listen address")
-	advertiseHTTP := flag.String("advertise-http", "", "HTTP address advertised to peers (default: derived from -http)")
-	grpcAddr := flag.String("grpc", ports.GRPCListen(), "gRPC listen address")
-	rdmaAddr := flag.String("rdma", ports.RDMAListen(), "RDMA listen address")
-	raftAddr := flag.String("raft", ports.RaftListen(), "Raft listen address")
-	advertiseRaft := flag.String("advertise-raft", "", "Raft address advertised to peers (default: same as -raft)")
-	dataDir := flag.String("data", "./data", "data directory for raft/meta")
-	chunkDir := flag.String("chunk-dir", "", "local disk directory for chunks (default: {data}/{id}/chunks)")
-	chunkBackend := flag.String("chunk-backend", "disk", "chunk backend: disk, tiered, or memory")
-	replicaFactor := flag.Int("replica-factor", 2, "chunk replication factor across nodes")
-	memCacheMB := flag.Int64("mem-cache-mb", 0, "in-memory read cache size in MB (0=disabled, tiered backend enables 512MB default)")
-	diskQuotaGB := flag.Int64("disk-quota-gb", 0, "local disk quota in GB (0=unlimited)")
-	gcInterval := flag.Duration("gc-interval", 5*time.Minute, "orphan chunk GC interval (0=disabled)")
-	flushInterval := flag.Duration("flush-interval", 30*time.Second, "local chunk flush/fsync interval (0=disabled except on shutdown)")
-	maxFileAge := flag.Duration("max-file-age", 0, "expire files older than this duration (0=disabled)")
-	defaultTTL := flag.Duration("default-ttl", 0, "TTL for newly created files (0=disabled)")
-	bootstrap := flag.Bool("bootstrap", false, "bootstrap a new raft cluster")
-	standalone := flag.Bool("standalone", false, "run without raft (single node)")
-	join := flag.String("join", "", "join an existing cluster via leader HTTP URL")
-	apiToken := flag.String("api-token", "", "optional bearer token for mutating API calls")
-	uriPrefix := flag.String("uri-prefix", "", "HTTP URI prefix for dashboard and API (e.g. /memoryfs)")
-	flag.Parse()
+func runNode(args []string) {
+	fs := flag.NewFlagSet("node", flag.ExitOnError)
+	id := fs.String("id", "n1", "node id")
+	httpAddr := fs.String("http", ports.HTTPListen(), "HTTP listen address")
+	advertiseHTTP := fs.String("advertise-http", "", "HTTP address advertised to peers (default: derived from -http)")
+	grpcAddr := fs.String("grpc", ports.GRPCListen(), "gRPC listen address")
+	rdmaAddr := fs.String("rdma", ports.RDMAListen(), "RDMA listen address")
+	raftAddr := fs.String("raft", ports.RaftListen(), "Raft listen address")
+	advertiseRaft := fs.String("advertise-raft", "", "Raft address advertised to peers (default: same as -raft)")
+	dataDir := fs.String("data", "./data", "data directory for raft/meta")
+	chunkDir := fs.String("chunk-dir", "", "local disk directory for chunks (default: {data}/{id}/chunks)")
+	chunkBackend := fs.String("chunk-backend", "disk", "chunk backend: disk, tiered, or memory")
+	replicaFactor := fs.Int("replica-factor", 2, "chunk replication factor across nodes")
+	memCacheMB := fs.Int64("mem-cache-mb", 0, "in-memory read cache size in MB (0=disabled, tiered backend enables 512MB default)")
+	diskQuotaGB := fs.Int64("disk-quota-gb", 0, "local disk quota in GB (0=unlimited)")
+	gcInterval := fs.Duration("gc-interval", 5*time.Minute, "orphan chunk GC interval (0=disabled)")
+	flushInterval := fs.Duration("flush-interval", 30*time.Second, "local chunk flush/fsync interval (0=disabled except on shutdown)")
+	maxFileAge := fs.Duration("max-file-age", 0, "expire files older than this duration (0=disabled)")
+	defaultTTL := fs.Duration("default-ttl", 0, "TTL for newly created files (0=disabled)")
+	bootstrap := fs.Bool("bootstrap", false, "bootstrap a new raft cluster")
+	standalone := fs.Bool("standalone", false, "run without raft (single node)")
+	join := fs.String("join", "", "join an existing cluster via leader HTTP URL")
+	apiToken := fs.String("api-token", "", "optional bearer token for mutating API calls")
+	uriPrefix := fs.String("uri-prefix", "", "HTTP URI prefix for dashboard and API (e.g. /memoryfs)")
+	_ = fs.Parse(args)
 
 	httpURL := normalizeHTTP(*httpAddr)
 	if *advertiseHTTP != "" {
@@ -166,7 +167,7 @@ func main() {
 	grpcSrv := grpc.NewServer(grpc.MaxRecvMsgSize(16<<20), grpc.MaxSendMsgSize(16<<20))
 	pb.RegisterMemoryFSServer(grpcSrv, grpcserver.New(svc))
 
-	go serveHTTP(*httpAddr, httpSrv.Handler(), &httpServer)
+	go serveHTTP(*httpAddr, httpSrv.Handler(), &nodeHTTPServer)
 	go serveGRPC(*grpcAddr, grpcSrv)
 
 	if *join != "" && !*standalone {
@@ -194,13 +195,13 @@ func main() {
 
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer shutdownCancel()
-	if httpServer != nil {
-		_ = httpServer.Shutdown(shutdownCtx)
+	if nodeHTTPServer != nil {
+		_ = nodeHTTPServer.Shutdown(shutdownCtx)
 	}
 	grpcSrv.GracefulStop()
 }
 
-var httpServer *http.Server
+var nodeHTTPServer *http.Server
 
 func serveHTTP(addr string, handler http.Handler, ref **http.Server) {
 	server := &http.Server{Addr: addr, Handler: handler}

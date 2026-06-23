@@ -23,8 +23,8 @@ FUSE/mount ──HTTP──► Node 集群
 
 | 组件 | 路径 | 职责 |
 |------|------|------|
-| Node | `cmd/node` | Raft、HTTP/gRPC API、chunk 存储 |
-| Mount | `cmd/mount` | FUSE 客户端，HTTP meta + chunk |
+| Node | `memoryfs node` | Raft、HTTP/gRPC API、chunk 存储 |
+| Mount | `memoryfs mount` | FUSE 客户端，HTTP meta + chunk |
 | Meta | `pkg/meta`, `pkg/raftnode` | inode、目录项、集群状态 |
 | Service | `pkg/service` | 业务逻辑、repair、registry |
 | FUSE | `pkg/fusefs`, `pkg/client`, `pkg/storage` | 客户端文件系统 |

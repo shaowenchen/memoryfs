@@ -9,8 +9,7 @@ description: MemoryFS project conventions — use when writing or modifying Go c
 
 | 包 | 职责 |
 |----|------|
-| `cmd/node` | 节点进程：Raft + HTTP/gRPC + chunk 存储 |
-| `cmd/mount` | FUSE 客户端（Linux only） |
+| `cmd/memoryfs` | 单一可执行程序，含 `node` / `mount` / `status` / `benchmark` 子命令 |
 | `pkg/meta` | inode/目录项抽象 |
 | `pkg/service` | 节点业务逻辑 |
 | `pkg/client` | 远程元数据 HTTP 客户端 |

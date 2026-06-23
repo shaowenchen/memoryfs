@@ -18,13 +18,7 @@ proto:
 
 build:
 	GO111MODULE=on CGO_ENABLED=0 GOOS=$${TARGETOS:-linux} GOARCH=$${TARGETARCH:-amd64} \
-		go build -tags rdma -o bin/node ./cmd/node
-	GO111MODULE=on CGO_ENABLED=0 GOOS=$${TARGETOS:-linux} GOARCH=$${TARGETARCH:-amd64} \
-		go build -tags rdma -o bin/mount ./cmd/mount
-	GO111MODULE=on CGO_ENABLED=0 GOOS=$${TARGETOS:-linux} GOARCH=$${TARGETARCH:-amd64} \
-		go build -o bin/status ./cmd/status
-	GO111MODULE=on CGO_ENABLED=0 GOOS=$${TARGETOS:-linux} GOARCH=$${TARGETARCH:-amd64} \
-		go build -o bin/benchmark ./cmd/benchmark
+		go build -tags rdma -o bin/memoryfs ./cmd/memoryfs
 
 test:
 	go test ./...
@@ -42,13 +36,13 @@ deploy-scripts:
 	chmod +x deploy/scripts/*.sh
 
 deploy-status: deploy-scripts
-	./bin/status -nodes http://127.0.0.1:19800 || ./deploy/scripts/cluster-status.sh http://127.0.0.1:19800
+	./bin/memoryfs status -nodes http://127.0.0.1:19800 || ./deploy/scripts/cluster-status.sh http://127.0.0.1:19800
 
 status:
-	go run ./cmd/status -nodes http://127.0.0.1:19800
+	go run ./cmd/memoryfs status -nodes http://127.0.0.1:19800
 
 benchmark:
-	go run ./cmd/benchmark -nodes http://127.0.0.1:19800 -writes 20 -reads 20 -workers 4
+	go run ./cmd/memoryfs benchmark -nodes http://127.0.0.1:19800 -writes 20 -reads 20 -workers 4
 
 helm-install:
 	helm upgrade --install memoryfs $(HELM_CHART) \
@@ -69,7 +63,7 @@ helm-template:
 
 # Local dev shortcuts
 node:
-	go run ./cmd/node -standalone -id n1 -http :19800 -grpc :19801 -data ./data
+	go run ./cmd/memoryfs node -standalone -id n1 -http :19800 -grpc :19801 -data ./data
 
 mount:
-	go run ./cmd/mount -mount /tmp/memoryfs -nodes http://127.0.0.1:19800 -f
+	go run ./cmd/memoryfs mount -mount /tmp/memoryfs -nodes http://127.0.0.1:19800 -f

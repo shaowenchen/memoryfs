@@ -1,13 +1,38 @@
 # 命令行与运维
 
-单一镜像 `shaowenchen/memoryfs` 包含 `node`、`mount`、`status`、`benchmark`。
+单一可执行程序 `memoryfs`（镜像 `shaowenchen/memoryfs`）通过子命令暴露所有功能。
 
 ```bash
 memoryfs node [flags]       # 存储节点
-memoryfs node-env           # 从 MEMORYFS_* 环境变量启动（K8s）
+memoryfs node-env           # 从 MEMORYFS_* 环境变量启动（K8s 入口）
 memoryfs mount [flags]      # FUSE 客户端
 memoryfs status [flags]     # 集群状态
 memoryfs benchmark [flags]  # 性能测试
+memoryfs config show|path|clear  # 查看 / 清除已保存的连接信息
+memoryfs version            # 版本信息
+```
+
+## 共享连接配置
+
+`memoryfs mount` 成功挂载后会把 `nodes / uri-prefix / api-token / mount-point / leader / replica-factor` 写到本地配置文件，后续 `status` / `benchmark` 在没有显式 `-nodes` 时自动复用，无需再敲一遍参数。
+
+参数解析优先级（每项独立 fallback）：
+
+1. 命令行 flag（`-nodes` / `-uri-prefix` / `-api-token`）
+2. 环境变量（`MEMORYFS_NODES` / `MEMORYFS_URI_PREFIX` / `MEMORYFS_API_TOKEN`）
+3. 已保存的 mount 配置文件
+4. 内置默认（`http://127.0.0.1:19800`，前缀自动探测）
+
+配置文件路径（按优先级取第一个非空）：
+
+- `$MEMORYFS_CONFIG`
+- `$XDG_CONFIG_HOME/memoryfs/config.json`
+- `$HOME/.memoryfs/config.json`
+
+```bash
+memoryfs config path   # 打印当前生效路径
+memoryfs config show   # 打印 JSON 内容
+memoryfs config clear  # 删除文件
 ```
 
 ## node 参数
@@ -45,14 +70,16 @@ memoryfs benchmark [flags]  # 性能测试
 ## status / benchmark
 
 ```bash
+# 首次（或 mount 容器之外）显式传一次
 memoryfs status -nodes http://127.0.0.1:19800
 memoryfs status -nodes http://127.0.0.1:19800 -json
 
-memoryfs benchmark -nodes http://127.0.0.1:19800 \
-  -writes 50 -reads 50 -workers 4 -size 4194304
+# mount 之后直接复用（同一用户/容器）
+memoryfs status
+memoryfs benchmark -writes 50 -reads 50 -workers 4 -size 4194304
 ```
 
-未指定 `-uri-prefix` 时自动探测 `/memoryfs`。环境变量：`MEMORYFS_NODES`、`MEMORYFS_URI_PREFIX`、`MEMORYFS_API_TOKEN`。
+未指定 `-uri-prefix` 时自动探测 `/memoryfs`。环境变量：`MEMORYFS_NODES`、`MEMORYFS_URI_PREFIX`、`MEMORYFS_API_TOKEN`、`MEMORYFS_CONFIG`。
 
 ## 运维面板
 
