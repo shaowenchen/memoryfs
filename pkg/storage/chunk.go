@@ -209,18 +209,35 @@ func (c *ChunkStore) Read(ctx context.Context, attr *meta.Attr, dest []byte, off
 			blockData = c.readBlock(ctx, attr, chunkIdx, blockIdx)
 		}
 
+		// If blockData is nil or empty, the block was never written.
+		// This can happen if attr.Size is set but blocks aren't flushed.
+		if len(blockData) == 0 {
+			blockID := meta.BlockID(attr.Ino, chunkIdx, blockIdx)
+			mountlog.Warnf("read missing block ino=%d chunk=%d block=%d blockID=%s attr.Size=%d offset=%d", 
+				attr.Ino, chunkIdx, blockIdx, blockID, attr.Size, pos)
+			// Return what we've read so far; don't advance further
+			return written, nil
+		}
+
 		avail := meta.BlockSize - blockOff
 		want := int(toRead) - written
 		if want > avail {
 			want = avail
 		}
+		copied := 0
 		for i := 0; i < want; i++ {
 			if blockOff+i < len(blockData) {
 				dest[written+i] = blockData[blockOff+i]
+				copied++
 			}
 		}
-		written += want
-		pos += int64(want)
+		if copied == 0 {
+			mountlog.Warnf("read zero bytes from block ino=%d chunk=%d block=%d blockDataLen=%d blockOff=%d want=%d",
+				attr.Ino, chunkIdx, blockIdx, len(blockData), blockOff, want)
+			return written, nil
+		}
+		written += copied
+		pos += int64(copied)
 	}
 	return written, nil
 }

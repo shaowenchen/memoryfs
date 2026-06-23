@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/shaowenchen/memoryfs/pkg/meta"
+	"github.com/shaowenchen/memoryfs/pkg/mountlog"
 )
 
 type blockKey struct {
@@ -118,8 +119,10 @@ func (w *blockWriter) Write(ctx context.Context, attr *meta.Attr, data []byte, o
 			w.mu.Unlock()
 			ensureChunk(attr, chunkIdx)
 			if err := w.store.writeChunk(ctx, blockID, data[pos:pos+writeN]); err != nil {
+				mountlog.Errorf("fast write failed ino=%d blockID=%s: %v", w.ino, blockID, err)
 				return err
 			}
+			mountlog.Debugf("fast write ok ino=%d blockID=%s bytes=%d", w.ino, blockID, writeN)
 			pos += writeN
 			continue
 		}
@@ -204,8 +207,10 @@ func (w *blockWriter) flushLocked(ctx context.Context, key blockKey, fileSize ui
 	payload := buf[:valid]
 	blockID := meta.BlockID(w.ino, key.chunkIdx, key.blockIdx)
 	if err := w.store.writeChunk(ctx, blockID, payload); err != nil {
+		mountlog.Errorf("flush failed ino=%d blockID=%s valid=%d: %v", w.ino, blockID, valid, err)
 		return err
 	}
+	mountlog.Debugf("flush ok ino=%d blockID=%s valid=%d", w.ino, blockID, valid)
 	delete(w.dirty, key)
 	delete(w.valid, key)
 	return nil
