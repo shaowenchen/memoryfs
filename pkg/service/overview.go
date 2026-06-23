@@ -26,7 +26,7 @@ type NodeOverview struct {
 type ClusterStorage struct {
 	TotalDiskQuotaBytes int64 `json:"total_disk_quota_bytes"`
 	TotalDiskBytes      int64 `json:"total_disk_bytes"`
-	TotalMemCacheBytes  int64 `json:"total_mem_cache_bytes"`
+	TotalMemBytes       int64 `json:"total_mem_bytes"`
 	ReachableNodes      int   `json:"reachable_nodes"`
 	TotalNodes          int   `json:"total_nodes"`
 }
@@ -91,7 +91,7 @@ func summarizeClusterStorage(nodes []NodeOverview) ClusterStorage {
 		}
 		out.ReachableNodes++
 		out.TotalDiskBytes += n.Stats.DiskBytes
-		out.TotalMemCacheBytes += n.Stats.MemCacheBytes
+		out.TotalMemBytes += n.Stats.MemBytes
 		out.TotalDiskQuotaBytes += n.Stats.DiskQuotaBytes
 	}
 	return out

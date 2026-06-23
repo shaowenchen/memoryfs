@@ -10,11 +10,15 @@ import (
 )
 
 // Stats holds node storage statistics.
+//
+// MemBytes is the memory occupied by chunk payloads on this node — this is
+// primary storage in memoryfs (not a cache). For backends that pair disk
+// with a read cache (tiered), MemBytes counts the in-memory portion.
 type Stats struct {
 	ChunkCount     int    `json:"chunk_count"`
 	DiskBytes      int64  `json:"disk_bytes"`
 	DiskQuotaBytes int64  `json:"disk_quota_bytes"`
-	MemCacheBytes  int64  `json:"mem_cache_bytes"`
+	MemBytes       int64  `json:"mem_bytes"`
 	ReplicaFactor  int    `json:"replica_factor"`
 	NodeState      string `json:"node_state"`
 	ClusterEpoch   uint64 `json:"cluster_epoch"`
@@ -32,7 +36,7 @@ func (s *Service) Stats() Stats {
 		st.DiskQuotaBytes = s.cfg.DiskQuotaGB << 30
 	}
 	if ts, ok := s.cfg.Chunks.(*chunk.TieredStore); ok {
-		st.MemCacheBytes = ts.MemUsage()
+		st.MemBytes = ts.MemUsage()
 		if used, err := ts.DiskUsage(); err == nil {
 			st.DiskBytes = used
 		}
@@ -45,14 +49,14 @@ func (s *Service) Stats() Stats {
 			st.DiskBytes = used
 		}
 	} else if qm, ok := s.cfg.Chunks.(*chunk.QuotaMemory); ok {
-		st.MemCacheBytes = qm.UsageBytes()
+		st.MemBytes = qm.UsageBytes()
 	} else if pm, ok := s.cfg.Chunks.(*chunk.PreallocMemory); ok {
-		st.MemCacheBytes = pm.UsageBytes()
+		st.MemBytes = pm.UsageBytes()
 		if pm.ReservedBytes() > 0 {
 			st.DiskQuotaBytes = pm.ReservedBytes()
 		}
 	} else if ms, ok := s.cfg.Chunks.(*chunk.MemoryStore); ok {
-		st.MemCacheBytes = ms.UsageBytes()
+		st.MemBytes = ms.UsageBytes()
 	}
 	return st
 }

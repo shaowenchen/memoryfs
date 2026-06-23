@@ -93,7 +93,7 @@
   <table>
     <thead>
       <tr>
-        <th>节点</th><th>角色</th><th>状态</th><th>Chunks</th><th>磁盘</th><th>操作</th>
+        <th>节点</th><th>角色</th><th>状态</th><th>Chunks</th><th>内存</th><th>磁盘</th><th>操作</th>
       </tr>
     </thead>
     <tbody id="node-rows"></tbody>
@@ -152,7 +152,7 @@
         ['RF', ov.replica_factor ?? '-'],
         ['节点', `${storage.reachable_nodes ?? 0}/${storage.total_nodes ?? (ov.nodes||[]).length}`],
         ['集群配额', fmtBytes(storage.total_disk_quota_bytes || 0)],
-        ['集群已用', fmtBytes((storage.total_disk_bytes || 0) + (storage.total_mem_cache_bytes || 0))],
+        ['集群已用', fmtBytes((storage.total_disk_bytes || 0) + (storage.total_mem_bytes || 0))],
         ['修复', ov.repair?.pending ?? 0],
       ];
       el.innerHTML = cards.map(([l,v]) =>
@@ -170,6 +170,7 @@
           <td>${role}</td>
           <td>${state}</td>
           <td>${stats.chunk_count??'-'}</td>
+          <td>${fmtBytes(stats.mem_bytes)}</td>
           <td>${fmtBytes(stats.disk_bytes)}</td>
           <td class="actions">
             <button class="secondary" onclick="nodeAction('${n.url}','/v1/lifecycle/ready')">Ready</button>

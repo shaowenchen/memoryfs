@@ -54,13 +54,13 @@ func printStatusText(w io.Writer, seed, prefix string, ov *service.ClusterOvervi
 		ov.Storage.ReachableNodes,
 		ov.Storage.TotalNodes,
 		FormatBytes(ov.Storage.TotalDiskQuotaBytes),
-		FormatBytes(ov.Storage.TotalDiskBytes+ov.Storage.TotalMemCacheBytes),
+		FormatBytes(ov.Storage.TotalDiskBytes+ov.Storage.TotalMemBytes),
 		FormatBytes(ov.Storage.TotalDiskBytes),
-		FormatBytes(ov.Storage.TotalMemCacheBytes),
+		FormatBytes(ov.Storage.TotalMemBytes),
 	)
 
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	_, _ = fmt.Fprintln(tw, "NODE\tROLE\tSTATE\tCHUNKS\tDISK\tMEM CACHE\tEPOCH\tREACH")
+	_, _ = fmt.Fprintln(tw, "NODE\tROLE\tSTATE\tCHUNKS\tDISK\tMEM\tEPOCH\tREACH")
 	for _, n := range ov.Nodes {
 		role := n.Role
 		state := n.NodeState
@@ -74,7 +74,7 @@ func printStatusText(w io.Writer, seed, prefix string, ov *service.ClusterOvervi
 			valueOr(state, "-"),
 			n.Stats.ChunkCount,
 			FormatBytes(n.Stats.DiskBytes),
-			FormatBytes(n.Stats.MemCacheBytes),
+			FormatBytes(n.Stats.MemBytes),
 			n.ClusterEpoch,
 			n.Reachable,
 		)

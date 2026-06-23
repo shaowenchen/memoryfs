@@ -91,7 +91,7 @@ MemoryFS: 元数据(Raft KV)         + 分布式内存池(RF)   + FUSE 薄客户
 
 ```
 集群总容量 = Σ node.storageGB
-集群已用   = Σ node.mem_cache_bytes   (实际 chunk 字节)
+集群已用   = Σ node.mem_bytes   (实际 chunk 字节)
 df 展示    = 总容量 / 总已用          (mount 汇总各节点 stats)
 ```
 

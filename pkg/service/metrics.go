@@ -13,9 +13,9 @@ var (
 		Namespace: "memoryfs", Name: "disk_bytes",
 		Help: "Local disk bytes used for chunks",
 	})
-	metricMemCacheBytes = prometheus.NewGauge(prometheus.GaugeOpts{
-		Namespace: "memoryfs", Name: "mem_cache_bytes",
-		Help: "In-memory chunk cache bytes",
+	metricMemBytes = prometheus.NewGauge(prometheus.GaugeOpts{
+		Namespace: "memoryfs", Name: "mem_bytes",
+		Help: "In-memory chunk payload bytes (primary storage in memoryfs)",
 	})
 	metricRepairPending = prometheus.NewGauge(prometheus.GaugeOpts{
 		Namespace: "memoryfs", Name: "repair_queue_pending",
@@ -36,7 +36,7 @@ var (
 )
 
 func init() {
-	prometheus.MustRegister(metricChunks, metricDiskBytes, metricMemCacheBytes,
+	prometheus.MustRegister(metricChunks, metricDiskBytes, metricMemBytes,
 		metricRepairPending, metricClusterEpoch, metricIsLeader, metricNodeState)
 }
 
@@ -45,7 +45,7 @@ func (s *Service) UpdateMetrics() {
 	st := s.Stats()
 	metricChunks.Set(float64(st.ChunkCount))
 	metricDiskBytes.Set(float64(st.DiskBytes))
-	metricMemCacheBytes.Set(float64(st.MemCacheBytes))
+	metricMemBytes.Set(float64(st.MemBytes))
 	metricRepairPending.Set(float64(s.RepairInfo(0).Pending))
 	metricClusterEpoch.Set(float64(st.ClusterEpoch))
 

@@ -191,7 +191,7 @@ dd / app
 
 Helm 参数 `node.storageGB` 表示每节点 chunk 存储上限（GB）。Chart 自动设置 Pod 内存 **request/limit = storageGB + 1Gi**（额外 1Gi 预留给进程、Raft 与运行时开销）。
 
-- **`diskSync` 关闭**（默认）：chunk 存内存（按数据大小 exact-size 分配，配额上限 `storageGB`）；实际用量见 `mem_cache_bytes`。
+- **`diskSync` 关闭**（默认）：chunk 存内存（按数据大小 exact-size 分配，配额上限 `storageGB`）；实际用量见 `mem_bytes`（memoryfs 中内存即主存储，不是缓存）。
 - **`diskSync` 开启**：chunk 落盘，磁盘配额同样为 `storageGB`。
 
 ## 集群 Epoch

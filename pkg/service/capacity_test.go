@@ -5,7 +5,7 @@ import "testing"
 func TestSumDiskQuotaAndUsage(t *testing.T) {
 	ov := ClusterOverview{
 		Nodes: []NodeOverview{
-			{URL: "http://n1:19800", Reachable: true, Stats: Stats{DiskBytes: 1 << 30, DiskQuotaBytes: 32 << 30, MemCacheBytes: 100}},
+			{URL: "http://n1:19800", Reachable: true, Stats: Stats{DiskBytes: 1 << 30, DiskQuotaBytes: 32 << 30, MemBytes: 100}},
 			{URL: "http://n2:19800", Reachable: true, Stats: Stats{DiskBytes: 2 << 30, DiskQuotaBytes: 32 << 30}},
 			{URL: "http://n3:19800", Reachable: false, Stats: Stats{DiskBytes: 9 << 30, DiskQuotaBytes: 32 << 30}},
 		},

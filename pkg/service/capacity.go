@@ -2,7 +2,7 @@ package service
 
 import "strings"
 
-// SumDiskUsageBytes totals disk+mem cache usage for reachable nodes.
+// SumDiskUsageBytes totals disk+memory usage for reachable nodes.
 // nodeURLs filters by normalized host (empty = all reachable nodes).
 func SumDiskUsageBytes(ov ClusterOverview, nodeURLs []string) uint64 {
 	want := nodeURLSet(nodeURLs)
@@ -16,7 +16,7 @@ func SumDiskUsageBytes(ov ClusterOverview, nodeURLs []string) uint64 {
 				continue
 			}
 		}
-		used += uint64(node.Stats.DiskBytes + node.Stats.MemCacheBytes)
+		used += uint64(node.Stats.DiskBytes + node.Stats.MemBytes)
 	}
 	return used
 }

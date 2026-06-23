@@ -112,8 +112,8 @@ func runMount(args []string) {
 		if err != nil {
 			return 0
 		}
-		if ov.Storage.TotalDiskBytes > 0 || ov.Storage.TotalMemCacheBytes > 0 {
-			return uint64(ov.Storage.TotalDiskBytes + ov.Storage.TotalMemCacheBytes)
+		if ov.Storage.TotalDiskBytes > 0 || ov.Storage.TotalMemBytes > 0 {
+			return uint64(ov.Storage.TotalDiskBytes + ov.Storage.TotalMemBytes)
 		}
 		return service.SumDiskUsageBytes(*ov, nil)
 	}
