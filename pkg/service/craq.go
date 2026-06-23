@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"log"
 	"sync"
 	"time"
 
@@ -90,6 +91,7 @@ func (s *Service) writeCommit(chunkID string, commitVer, chainVer uint64) chunk.
 	meta.State = chunk.ChunkStateCommitted
 	meta.UpdatedAt = time.Now()
 	s.setMeta(meta)
+	log.Printf("CRAQ commit chunk=%s updateVer=%d commitVer=%d chainVer=%d", chunkID, meta.UpdateVer, meta.CommitVer, meta.ChainVer)
 	return meta
 }
 

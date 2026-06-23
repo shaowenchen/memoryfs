@@ -258,9 +258,11 @@ func (s *Service) putChunk(ctx context.Context, chunkID string, data []byte, rep
 func (s *Service) GetChunk(ctx context.Context, chunkID string) ([]byte, error) {
 	meta := s.getMeta(chunkID)
 	if !meta.Committed() && meta.UpdateVer != 0 {
+		log.Printf("CRAQ read rejected chunk=%s state=%s updateVer=%d commitVer=%d", chunkID, meta.State, meta.UpdateVer, meta.CommitVer)
 		return nil, fmt.Errorf("chunk not committed")
 	}
 	if data, ok := s.cfg.Chunks.Get(chunkID); ok {
+		log.Printf("CRAQ read ok chunk=%s state=%s updateVer=%d commitVer=%d bytes=%d", chunkID, meta.State, meta.UpdateVer, meta.CommitVer, len(data))
 		return data, nil
 	}
 	return nil, fmt.Errorf("chunk not found")

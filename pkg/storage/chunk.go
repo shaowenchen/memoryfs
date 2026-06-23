@@ -336,9 +336,16 @@ func (c *ChunkStore) readChunk(ctx context.Context, chunkID string) ([]byte, err
 	}
 	var last error
 	for _, node := range nodes {
-		data, err := c.transport.GetChunkWithOptions(ioCtx, node, chunkID, transport.ChunkReadOptions{})
+		// Try committed read first
+		data, err := c.transport.GetChunkWithOptions(ioCtx, node, chunkID, transport.ChunkReadOptions{AllowUncommitted: false})
 		if err == nil {
-			mountlog.Debugf("chunk %s GET ok node=%s bytes=%d", chunkID, node, len(data))
+			mountlog.Debugf("chunk %s GET ok (committed) node=%s bytes=%d", chunkID, node, len(data))
+			return data, nil
+		}
+		// Fallback to uncommitted read for debugging
+		data, err = c.transport.GetChunkWithOptions(ioCtx, node, chunkID, transport.ChunkReadOptions{AllowUncommitted: true})
+		if err == nil {
+			mountlog.Warnf("chunk %s GET ok (uncommitted) node=%s bytes=%d", chunkID, node, len(data))
 			return data, nil
 		}
 		mountlog.Warnf("chunk %s GET failed node=%s: %v", chunkID, node, err)
