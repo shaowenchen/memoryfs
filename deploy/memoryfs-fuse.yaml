@@ -1,0 +1,42 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: memoryfs-fuse
+  namespace: ops-system
+spec:
+  selector:
+    matchLabels:
+      app: memoryfs-fuse
+  template:
+    metadata:
+      labels:
+        app: memoryfs-fuse
+    spec:
+      hostNetwork: true
+      nodeSelector:
+        memoryfs.io/mount: "true"
+      containers:
+        - name: fuse
+          image: shaowenchen/memoryfs:latest
+          command:
+            - sh
+            - -c
+            - |
+              until curl -sf http://memoryfs-0.memoryfs-headless.memoryfs.svc:19800/health; do sleep 3; done
+              /bin/memoryfs mount -mount /mnt/memoryfs -nodes http://memoryfs-0.memoryfs-headless.memoryfs.svc:19800 -f
+          securityContext:
+            privileged: true
+          volumeMounts:
+            - name: host-mount
+              mountPath: /mnt/memoryfs
+              mountPropagation: Bidirectional
+            - name: dev-fuse
+              mountPath: /dev/fuse
+      volumes:
+        - name: host-mount
+          hostPath:
+            path: /mnt/memoryfs
+            type: DirectoryOrCreate
+        - name: dev-fuse
+          hostPath:
+            path: /dev/fuse

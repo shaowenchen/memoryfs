@@ -165,6 +165,9 @@ func (s *Server) SetAttr(ctx context.Context, req *pb.SetAttrRequest) (*pb.SetAt
 func (s *Server) PutChunk(stream pb.MemoryFS_PutChunkServer) error {
 	var chunkID string
 	var data []byte
+	var req service.ReplicaWrite
+	var replica bool
+	received := false
 	for {
 		msg, err := stream.Recv()
 		if err == io.EOF {
@@ -173,10 +176,33 @@ func (s *Server) PutChunk(stream pb.MemoryFS_PutChunkServer) error {
 		if err != nil {
 			return err
 		}
+		if !received {
+			replica = msg.GetReplica()
+			req = service.ReplicaWrite{
+				Stage:      msg.GetStage(),
+				ChainID:    msg.GetChainId(),
+				ChainVer:   msg.GetChainVer(),
+				UpdateVer:  msg.GetUpdateVer(),
+				CommitVer:  msg.GetCommitVer(),
+				Replicas:   msg.GetReplicas(),
+				FromClient: msg.GetFromClient(),
+				Syncing:    msg.GetSyncing(),
+			}
+			if req.Stage == "" {
+				req.Stage = "prepare"
+			}
+			received = true
+		}
 		if chunkID == "" {
 			chunkID = msg.GetChunkId()
 		}
 		data = append(data, msg.GetData()...)
+	}
+	if replica {
+		if err := s.svc.StoreChunkLocal(stream.Context(), chunkID, data, req); err != nil {
+			return status.Errorf(codes.Internal, "%v", err)
+		}
+		return stream.SendAndClose(&pb.PutChunkResponse{Replicas: req.Replicas})
 	}
 	replicas, err := s.svc.PutChunk(stream.Context(), chunkID, data)
 	if err != nil {
@@ -186,8 +212,11 @@ func (s *Server) PutChunk(stream pb.MemoryFS_PutChunkServer) error {
 }
 
 func (s *Server) GetChunk(req *pb.GetChunkRequest, stream pb.MemoryFS_GetChunkServer) error {
-	data, err := s.svc.GetChunk(stream.Context(), req.GetChunkId())
+	data, err := s.svc.GetChunkWithVisibility(stream.Context(), req.GetChunkId(), req.GetAllowUncommitted())
 	if err != nil {
+		if err.Error() == "chunk not committed" {
+			return status.Errorf(codes.FailedPrecondition, "%v", err)
+		}
 		return status.Errorf(codes.NotFound, "%v", err)
 	}
 	return stream.Send(&pb.GetChunkResponse{Data: data})

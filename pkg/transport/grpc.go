@@ -17,22 +17,17 @@ import (
 
 // GRPCTransport uses gRPC streaming chunk APIs.
 type GRPCTransport struct {
-	dial        func(target string) (*grpc.ClientConn, error)
-	httpReplica *HTTPTransport
+	dial func(target string) (*grpc.ClientConn, error)
 }
 
 // NewGRPCTransport creates a gRPC chunk transport.
 func NewGRPCTransport() *GRPCTransport {
-	return NewGRPCTransportWithHTTP(NewHTTPTransport())
+	return NewGRPCTransportWithHTTP(nil)
 }
 
-// NewGRPCTransportWithHTTP creates a gRPC transport that falls back to HTTP for replica writes.
-func NewGRPCTransportWithHTTP(httpReplica *HTTPTransport) *GRPCTransport {
-	if httpReplica == nil {
-		httpReplica = NewHTTPTransport()
-	}
+// NewGRPCTransportWithHTTP keeps compatibility with older callsites.
+func NewGRPCTransportWithHTTP(_ *HTTPTransport) *GRPCTransport {
 	return &GRPCTransport{
-		httpReplica: httpReplica,
 		dial: func(target string) (*grpc.ClientConn, error) {
 			return grpc.NewClient(target,
 				grpc.WithTransportCredentials(insecure.NewCredentials()),
@@ -57,15 +52,10 @@ func (t *GRPCTransport) PutChunkReplica(ctx context.Context, nodeURL, chunkID st
 }
 
 func (t *GRPCTransport) PutChunkWithOptions(ctx context.Context, nodeURL, chunkID string, data []byte, opts ChunkWriteOptions) error {
-	if opts.Replica || opts.Stage != "" || opts.ChainID != 0 || opts.ChainVer != 0 || opts.UpdateVer != 0 || opts.CommitVer != 0 || len(opts.Replicas) > 0 || opts.FromClient || opts.Syncing {
-		// gRPC API does not carry CRAQ metadata yet; use HTTP path that supports
-		// CRAQ query parameters for chain forwarding.
-		return t.httpReplica.PutChunkWithOptions(ctx, nodeURL, chunkID, data, opts)
-	}
-	return t.putChunk(ctx, nodeURL, chunkID, data)
+	return t.putChunk(ctx, nodeURL, chunkID, data, opts)
 }
 
-func (t *GRPCTransport) putChunk(ctx context.Context, nodeURL, chunkID string, data []byte) error {
+func (t *GRPCTransport) putChunk(ctx context.Context, nodeURL, chunkID string, data []byte, opts ChunkWriteOptions) error {
 	conn, err := t.dial(normalizeGRPC(nodeURL))
 	if err != nil {
 		return err
@@ -76,7 +66,19 @@ func (t *GRPCTransport) putChunk(ctx context.Context, nodeURL, chunkID string, d
 	if err != nil {
 		return err
 	}
-	if err := stream.Send(&pb.PutChunkRequest{ChunkId: chunkID, Data: data}); err != nil {
+	if err := stream.Send(&pb.PutChunkRequest{
+		ChunkId:    chunkID,
+		Data:       data,
+		Replica:    opts.Replica,
+		Stage:      opts.Stage,
+		ChainId:    opts.ChainID,
+		ChainVer:   opts.ChainVer,
+		UpdateVer:  opts.UpdateVer,
+		CommitVer:  opts.CommitVer,
+		Replicas:   opts.Replicas,
+		FromClient: opts.FromClient,
+		Syncing:    opts.Syncing,
+	}); err != nil {
 		return err
 	}
 	_, err = stream.CloseAndRecv()
@@ -88,16 +90,16 @@ func (t *GRPCTransport) GetChunk(ctx context.Context, nodeURL, chunkID string) (
 }
 
 func (t *GRPCTransport) GetChunkWithOptions(ctx context.Context, nodeURL, chunkID string, opts ChunkReadOptions) ([]byte, error) {
-	if opts.AllowUncommitted {
-		return t.httpReplica.GetChunkWithOptions(ctx, nodeURL, chunkID, opts)
-	}
 	conn, err := t.dial(normalizeGRPC(nodeURL))
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = conn.Close() }()
 	client := pb.NewMemoryFSClient(conn)
-	stream, err := client.GetChunk(ctx, &pb.GetChunkRequest{ChunkId: chunkID})
+	stream, err := client.GetChunk(ctx, &pb.GetChunkRequest{
+		ChunkId:          chunkID,
+		AllowUncommitted: opts.AllowUncommitted,
+	})
 	if err != nil {
 		return nil, err
 	}
